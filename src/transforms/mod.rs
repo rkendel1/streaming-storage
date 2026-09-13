@@ -1,8 +1,15 @@
-use crate::core::{Artifact, ArtifactEntry, ArtifactError, CreationMetadata, EntryType, Provenance};
+use crate::core::{
+    Artifact, ArtifactEntry, ArtifactError, CreationMetadata, EntryType, Provenance,
+    TransformationRecord, sha256_prefixed,
+};
 use crate::pipeline::ContentResolver;
+use serde::Serialize;
 use std::collections::BTreeMap;
 
 pub trait ArtifactTransform {
+    fn transform_kind(&self) -> &'static str;
+    fn transform_identity(&self) -> Result<String, ArtifactError>;
+
     fn apply(
         &self,
         artifact: &Artifact,
@@ -28,6 +35,19 @@ impl PrefixTransform {
 }
 
 impl ArtifactTransform for PrefixTransform {
+    fn transform_kind(&self) -> &'static str {
+        "prefix"
+    }
+
+    fn transform_identity(&self) -> Result<String, ArtifactError> {
+        transform_identity(
+            self.transform_kind(),
+            &serde_json::json!({
+                "prefix": &self.prefix,
+            }),
+        )
+    }
+
     fn apply(
         &self,
         artifact: &Artifact,
@@ -61,7 +81,12 @@ impl ArtifactTransform for PrefixTransform {
                 pipeline_identity: artifact.pipeline_identity.clone(),
                 creation_metadata: CreationMetadata::default(),
             },
-        )?;
+        )?
+        .with_transformation_record(TransformationRecord {
+            input_artifact_identity: artifact.identity.clone(),
+            transform_identity: self.transform_identity()?,
+            transform_kind: self.transform_kind().to_string(),
+        });
 
         Ok(TransformedArtifact {
             artifact: new_artifact,
@@ -83,6 +108,22 @@ impl RedactTransform {
 }
 
 impl ArtifactTransform for RedactTransform {
+    fn transform_kind(&self) -> &'static str {
+        "redact"
+    }
+
+    fn transform_identity(&self) -> Result<String, ArtifactError> {
+        let mut paths = self.paths_to_remove.clone();
+        paths.sort();
+        paths.dedup();
+        transform_identity(
+            self.transform_kind(),
+            &serde_json::json!({
+                "paths": paths,
+            }),
+        )
+    }
+
     fn apply(
         &self,
         artifact: &Artifact,
@@ -104,7 +145,12 @@ impl ArtifactTransform for RedactTransform {
                 pipeline_identity: artifact.pipeline_identity.clone(),
                 creation_metadata: CreationMetadata::default(),
             },
-        )?;
+        )?
+        .with_transformation_record(TransformationRecord {
+            input_artifact_identity: artifact.identity.clone(),
+            transform_identity: self.transform_identity()?,
+            transform_kind: self.transform_kind().to_string(),
+        });
 
         Ok(TransformedArtifact {
             artifact: new_artifact,
@@ -128,6 +174,21 @@ impl GenerateTransform {
 }
 
 impl ArtifactTransform for GenerateTransform {
+    fn transform_kind(&self) -> &'static str {
+        "generate"
+    }
+
+    fn transform_identity(&self) -> Result<String, ArtifactError> {
+        transform_identity(
+            self.transform_kind(),
+            &serde_json::json!({
+                "path": &self.path,
+                "content_digest": sha256_prefixed(&self.content),
+                "size": self.content.len() as u64,
+            }),
+        )
+    }
+
     fn apply(
         &self,
         artifact: &Artifact,
@@ -177,11 +238,25 @@ impl ArtifactTransform for GenerateTransform {
                 pipeline_identity: artifact.pipeline_identity.clone(),
                 creation_metadata: CreationMetadata::default(),
             },
-        )?;
+        )?
+        .with_transformation_record(TransformationRecord {
+            input_artifact_identity: artifact.identity.clone(),
+            transform_identity: self.transform_identity()?,
+            transform_kind: self.transform_kind().to_string(),
+        });
 
         Ok(TransformedArtifact {
             artifact: new_artifact,
             content_updates,
         })
     }
+}
+
+fn transform_identity<T: Serialize>(kind: &str, spec: &T) -> Result<String, ArtifactError> {
+    let canonical = serde_json::json!({
+        "schema": "artifact_transform.v1",
+        "kind": kind,
+        "spec": spec,
+    });
+    Ok(sha256_prefixed(&serde_json::to_vec(&canonical)?))
 }

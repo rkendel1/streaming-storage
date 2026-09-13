@@ -96,6 +96,7 @@ impl CompositionInput {
             pipeline_identity: identity_for_artifact,
             capabilities: all_capabilities,
             provenance,
+            lineage: Vec::new(),
             semantic_declaration: None,
         })
     }

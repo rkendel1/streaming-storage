@@ -18,7 +18,8 @@ pub use crate::authorization::{
 pub use crate::composition::{CollisionPolicy, CompositionInput, CompositionOptions};
 pub use crate::core::{
     Artifact, ArtifactEntry, ArtifactError, Capability, CreationMetadata, EntryType, Manifest,
-    MaterializationResult, Provenance, normalize_relative_path, validate_entry_layout,
+    MaterializationResult, Provenance, TransformationRecord, normalize_relative_path,
+    validate_entry_layout,
 };
 pub use crate::materializers::{TarMaterializer, ZipMaterialization, ZipMaterializer};
 pub use crate::transforms::{

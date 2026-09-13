@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -89,7 +89,7 @@ impl From<serde_json::Error> for ArtifactError {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Serialize)]
 pub struct Capability {
     pub name: String,
     pub version: String,
@@ -107,13 +107,13 @@ impl Capability {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EntryType {
     File,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Serialize)]
 pub struct ArtifactEntry {
     pub path: String,
     pub entry_type: EntryType,
@@ -121,20 +121,27 @@ pub struct ArtifactEntry {
     pub content_digest: String,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CreationMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Provenance {
     pub source_identity: String,
     pub pipeline_identity: String,
     pub creation_metadata: CreationMetadata,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TransformationRecord {
+    pub input_artifact_identity: String,
+    pub transform_identity: String,
+    pub transform_kind: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Manifest {
     pub manifest_version: u32,
     pub artifact_identity: String,
@@ -154,7 +161,7 @@ impl Manifest {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Artifact {
     pub identity: String,
     pub entries: Vec<ArtifactEntry>,
@@ -162,11 +169,13 @@ pub struct Artifact {
     pub pipeline_identity: String,
     pub capabilities: Vec<Capability>,
     pub provenance: Provenance,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lineage: Vec<TransformationRecord>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub semantic_declaration: Option<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct MaterializationResult {
     pub artifact_identity: String,
     pub materializer_format: String,
@@ -202,8 +211,18 @@ impl Artifact {
             pipeline_identity,
             capabilities,
             provenance,
+            lineage: Vec::new(),
             semantic_declaration: None,
         })
+    }
+
+    pub fn with_transformation_record(mut self, record: TransformationRecord) -> Self {
+        self.lineage.push(record);
+        self
+    }
+
+    pub fn lineage(&self) -> &[TransformationRecord] {
+        &self.lineage
     }
 
     pub fn with_semantic_declaration(mut self, declaration: impl Into<String>) -> Self {
