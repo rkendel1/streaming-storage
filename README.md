@@ -162,3 +162,4 @@ cargo test
 - `PHASE-16-PRODUCT-VALIDATION.md` tests the kernel against concrete external workflows.
 - `PHASE-14-BOUNDARY-ANALYSIS.md` records the prior boundary investigation.
 - `PHASE-14-TAXONOMY-REVISION.md` records why Contextual is an external consumption architecture.
+- `PHASE-25A-MATERIALIZATION-CAPABILITY-AUDIT.md` inventories output/materialization capabilities and gaps without changing the logical artifact model.
