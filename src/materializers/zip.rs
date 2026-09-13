@@ -1,5 +1,5 @@
-use crate::core::{Artifact, ArtifactError, sha256_prefixed, validate_entry_layout};
-use crate::pipeline::EntryContentResolver;
+use crate::core::{Artifact, ArtifactError, MaterializationResult, sha256_prefixed, validate_entry_layout};
+use crate::pipeline::ContentResolver;
 use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, Write};
@@ -19,7 +19,7 @@ pub struct ZipMaterialization {
 pub struct ZipMaterializer;
 
 impl ZipMaterializer {
-    pub fn materialize_to_vec<R: EntryContentResolver>(
+    pub fn materialize_to_vec<R: ContentResolver>(
         &self,
         artifact: &Artifact,
         resolver: &R,
@@ -29,12 +29,12 @@ impl ZipMaterializer {
         Ok(cursor.into_inner())
     }
 
-    pub fn materialize_to_path<R: EntryContentResolver>(
+    pub fn materialize_to_path<R: ContentResolver>(
         &self,
         artifact: &Artifact,
         resolver: &R,
         output: impl AsRef<Path>,
-    ) -> Result<ZipMaterialization, ArtifactError> {
+    ) -> Result<MaterializationResult, ArtifactError> {
         let output = output.as_ref();
         let bytes = self.materialize_to_vec(artifact, resolver)?;
         let mut file = File::create(output).map_err(|source| ArtifactError::io(output, source))?;
@@ -42,13 +42,15 @@ impl ZipMaterializer {
             .map_err(|source| ArtifactError::io(output, source))?;
         file.sync_all()
             .map_err(|source| ArtifactError::io(output, source))?;
-        Ok(ZipMaterialization {
+        Ok(MaterializationResult {
+            artifact_identity: artifact.identity.clone(),
+            materializer_format: "zip".to_string(),
             output_digest: sha256_prefixed(&bytes),
             size_bytes: bytes.len() as u64,
         })
     }
 
-    pub fn materialize_to_writer<W: Write + Seek, R: EntryContentResolver>(
+    pub fn materialize_to_writer<W: Write + Seek, R: ContentResolver>(
         &self,
         artifact: &Artifact,
         resolver: &R,
@@ -64,7 +66,7 @@ impl ZipMaterializer {
         for entry in &artifact.entries {
             zip.start_file(entry.path.clone(), options)
                 .map_err(|error| ArtifactError::Materialization(error.to_string()))?;
-            let mut reader = resolver.open(&entry.path)?;
+            let mut reader = resolver.resolve(&entry.path)?;
             write_and_verify_entry(
                 &mut zip,
                 &mut reader,
