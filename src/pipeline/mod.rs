@@ -117,19 +117,6 @@ impl CompileStageSpec {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct CompositionStageSpec {
-    pub additional_artifact_count: usize,
-}
-
-impl CompositionStageSpec {
-    pub fn new(additional_artifact_count: usize) -> Self {
-        Self {
-            additional_artifact_count,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StageSpec {
     Select(SelectStageSpec),
@@ -137,7 +124,6 @@ pub enum StageSpec {
     Redact(RedactStageSpec),
     Generate(GenerateStageSpec),
     Compile(CompileStageSpec),
-    Composition(CompositionStageSpec),
     Manifest,
     Validate,
 }
@@ -150,7 +136,6 @@ impl StageSpec {
             Self::Redact(_) => "redact",
             Self::Generate(_) => "generate",
             Self::Compile(_) => "compile",
-            Self::Composition(_) => "composition",
             Self::Manifest => "manifest",
             Self::Validate => "validate",
         }
@@ -194,22 +179,12 @@ impl PipelineExecutor {
         resolver: Arc<dyn ContentResolver>,
         stage: &StageSpec,
     ) -> Result<StageOutput, ArtifactError> {
-        Self::execute_stage_with_context(artifact, resolver, stage, None)
-    }
-
-    pub fn execute_stage_with_context(
-        artifact: &Artifact,
-        resolver: Arc<dyn ContentResolver>,
-        stage: &StageSpec,
-        additional_artifacts: Option<&Vec<Artifact>>,
-    ) -> Result<StageOutput, ArtifactError> {
         match stage {
             StageSpec::Select(spec) => Self::execute_select(artifact, resolver, spec),
             StageSpec::Transform(spec) => Self::execute_transform(artifact, resolver, spec),
             StageSpec::Redact(spec) => Self::execute_redact(artifact, resolver, spec),
             StageSpec::Generate(spec) => Self::execute_generate(artifact, resolver, spec),
             StageSpec::Compile(spec) => Self::execute_compile(artifact, resolver, spec),
-            StageSpec::Composition(spec) => Self::execute_composition(artifact, resolver, spec, additional_artifacts),
             StageSpec::Manifest => Self::execute_manifest(artifact, resolver),
             StageSpec::Validate => Self::execute_validate(artifact, resolver),
         }
@@ -314,39 +289,6 @@ impl PipelineExecutor {
                 target
             ))),
         }
-    }
-
-    fn execute_composition(
-        artifact: &Artifact,
-        resolver: Arc<dyn ContentResolver>,
-        spec: &CompositionStageSpec,
-        additional_artifacts: Option<&Vec<Artifact>>,
-    ) -> Result<StageOutput, ArtifactError> {
-        let additional = additional_artifacts.ok_or_else(|| {
-            ArtifactError::InvalidState(
-                "composition stage requires additional artifacts in execution context".to_string(),
-            )
-        })?;
-
-        if additional.len() != spec.additional_artifact_count {
-            return Err(ArtifactError::InvalidState(format!(
-                "composition stage expects {} artifacts but got {}",
-                spec.additional_artifact_count,
-                additional.len()
-            )));
-        }
-
-        let mut artifacts_to_compose = vec![artifact.clone()];
-        artifacts_to_compose.extend(additional.clone());
-
-        use crate::composition::{CompositionInput, CompositionOptions};
-        let composed = CompositionInput::new(artifacts_to_compose)
-            .compose(CompositionOptions::default())?;
-
-        Ok(StageOutput {
-            artifact: composed,
-            resolver: Arc::new(MemoryContentResolver::new(BTreeMap::new())),
-        })
     }
 
     fn compile_wasm(
@@ -533,14 +475,6 @@ impl PipelineSpec {
             ));
         }
 
-        for stage in &self.stages {
-            if matches!(stage, StageSpec::Composition(_)) {
-                return Err(ArtifactError::InvalidState(
-                    "composition stages are not supported in directory-sourced pipelines".to_string(),
-                ));
-            }
-        }
-
         self.validate_stage_sequence()?;
         let root = root.as_ref();
         let pipeline_identity = self.identity()?;
@@ -589,61 +523,9 @@ impl PipelineSpec {
         })
     }
 
-    pub fn build_from_artifacts(
-        &self,
-        artifacts: Vec<Artifact>,
-    ) -> Result<SourceBackedArtifact, ArtifactError> {
-        if artifacts.is_empty() {
-            return Err(ArtifactError::InvalidState(
-                "build_from_artifacts requires at least one artifact".to_string(),
-            ));
-        }
-
-        self.validate_stage_sequence()?;
-
-        let _pipeline_identity = self.identity()?;
-        let mut stage_trace = vec!["composition_source".to_string()];
-        let mut current_artifact = artifacts[0].clone();
-        let additional_artifacts = if artifacts.len() > 1 {
-            artifacts[1..].to_vec()
-        } else {
-            vec![]
-        };
-
-        let mut current = StageOutput {
-            artifact: current_artifact,
-            resolver: Arc::new(MemoryContentResolver::new(BTreeMap::new())),
-        };
-
-        for (_idx, stage) in self.stages.iter().enumerate() {
-            stage_trace.push(stage.label().to_string());
-
-            let additional = if matches!(stage, StageSpec::Composition(_)) && !additional_artifacts.is_empty() {
-                Some(&additional_artifacts)
-            } else {
-                None
-            };
-
-            current = PipelineExecutor::execute_stage_with_context(
-                &current.artifact,
-                current.resolver.clone(),
-                stage,
-                additional,
-            )?;
-        }
-
-        Ok(SourceBackedArtifact {
-            artifact: current.artifact,
-            contents: BTreeMap::new(),
-            stage_trace,
-            resolver: Some(current.resolver),
-        })
-    }
-
     fn validate_stage_sequence(&self) -> Result<(), ArtifactError> {
         let mut seen_manifest = false;
         let mut seen_validate = false;
-        let mut seen_composition = false;
 
         for stage in &self.stages {
             if seen_validate {
@@ -653,17 +535,6 @@ impl PipelineSpec {
             }
 
             match stage {
-                StageSpec::Composition(_) if seen_composition => {
-                    return Err(ArtifactError::InvalidState(
-                        "composition stage may only appear once".to_string(),
-                    ));
-                }
-                StageSpec::Composition(_) if seen_manifest => {
-                    return Err(ArtifactError::InvalidState(
-                        "composition stage must appear before manifest".to_string(),
-                    ));
-                }
-                StageSpec::Composition(_) => seen_composition = true,
                 StageSpec::Select(_) | StageSpec::Transform(_) | StageSpec::Redact(_)
                 | StageSpec::Generate(_) | StageSpec::Compile(_) if seen_manifest => {
                     return Err(ArtifactError::InvalidState(
