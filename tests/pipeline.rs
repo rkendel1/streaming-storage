@@ -1,10 +1,10 @@
 use artifact::{
-    AllowAllPolicy, AllowListPolicy, ApplicationArtifact, Artifact, ArtifactEntry, ArtifactSDK,
-    ArtifactTransform, AuthorizationResult, Capability, CapabilityPolicy, ContentResolver,
-    CreationMetadata, EntryType, GenerateTransform, MaterializationResult, MemoryContentResolver,
-    PipelineSpec, PrefixTransform, Provenance, RecipeSpec, RedactTransform, SelectStageSpec,
-    SourceSpec, StageSpec, TarMaterializer, TransformedContentResolver, ZipMaterializer,
-    default_directory_zip_pipeline, normalize_relative_path,
+    Artifact, ArtifactEntry, Capability, ContentResolver, CreationMetadata, EntryType,
+    GenerateTransform, MaterializationResult, MemoryContentResolver, PipelineSpec, Provenance,
+    PrefixTransform, RedactTransform, RecipeSpec, SelectStageSpec, SourceSpec, StageSpec, TarMaterializer,
+    TransformedContentResolver, ZipMaterializer, default_directory_zip_pipeline,
+    normalize_relative_path, ArtifactTransform, AllowAllPolicy, AllowListPolicy, AuthorizationResult,
+    CapabilityPolicy, ArtifactSDK, ApplicationArtifact,
 };
 use sha2::Digest;
 use std::collections::BTreeMap;
@@ -19,10 +19,7 @@ fn pipeline_stages_execute_in_declared_order() {
         .build_from_directory(example_dir())
         .expect("pipeline should build example");
 
-    assert_eq!(
-        built.stage_trace(),
-        ["source", "select", "manifest", "validate"]
-    );
+    assert_eq!(built.stage_trace(), ["source", "select", "manifest", "validate"]);
 }
 
 #[test]
@@ -367,10 +364,7 @@ fn format_independence_same_artifact_produces_different_digests() {
     );
     let zip_digest = digest_for_bytes(&zip_result);
     let tar_digest = digest_for_bytes(&tar_result);
-    assert_ne!(
-        zip_digest, tar_digest,
-        "ZIP and TAR should have different digests"
-    );
+    assert_ne!(zip_digest, tar_digest, "ZIP and TAR should have different digests");
 }
 
 #[test]
@@ -549,13 +543,11 @@ fn redact_transform_removes_entries_and_changes_identity() {
 
     assert_ne!(result.artifact.identity, original_identity);
     assert_eq!(result.artifact.entries.len(), original_entry_count - 1);
-    assert!(
-        result
-            .artifact
-            .entries
-            .iter()
-            .all(|e| e.path != "README.md")
-    );
+    assert!(result
+        .artifact
+        .entries
+        .iter()
+        .all(|e| e.path != "README.md"));
 }
 
 #[test]
@@ -574,13 +566,11 @@ fn generate_transform_adds_entry_and_changes_identity() {
 
     assert_ne!(result.artifact.identity, original_identity);
     assert_eq!(result.artifact.entries.len(), original_entry_count + 1);
-    assert!(
-        result
-            .artifact
-            .entries
-            .iter()
-            .any(|e| e.path == "generated.txt")
-    );
+    assert!(result
+        .artifact
+        .entries
+        .iter()
+        .any(|e| e.path == "generated.txt"));
 }
 
 #[test]
@@ -713,12 +703,8 @@ fn declarative_pipeline_with_prefix_transform() {
     let pipeline = PipelineSpec {
         source: SourceSpec::Directory,
         stages: vec![
-            StageSpec::Select(
-                SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid"),
-            ),
-            StageSpec::Transform(
-                artifact::TransformStageSpec::new("bundle").expect("prefix is valid"),
-            ),
+            StageSpec::Select(SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid")),
+            StageSpec::Transform(artifact::TransformStageSpec::new("bundle").expect("prefix is valid")),
             StageSpec::Manifest,
             StageSpec::Validate,
         ],
@@ -752,13 +738,8 @@ fn declarative_pipeline_with_redact_stage() {
     let pipeline = PipelineSpec {
         source: SourceSpec::Directory,
         stages: vec![
-            StageSpec::Select(
-                SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid"),
-            ),
-            StageSpec::Redact(
-                artifact::RedactStageSpec::new(vec!["README.md".to_string()])
-                    .expect("redact spec is valid"),
-            ),
+            StageSpec::Select(SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid")),
+            StageSpec::Redact(artifact::RedactStageSpec::new(vec!["README.md".to_string()]).expect("redact spec is valid")),
             StageSpec::Manifest,
             StageSpec::Validate,
         ],
@@ -777,7 +758,10 @@ fn declarative_pipeline_with_redact_stage() {
 
     let artifact = built.artifact();
     assert!(
-        artifact.entries.iter().all(|e| e.path != "README.md"),
+        artifact
+            .entries
+            .iter()
+            .all(|e| e.path != "README.md"),
         "README.md should be redacted"
     );
 
@@ -789,13 +773,8 @@ fn declarative_pipeline_with_generate_stage() {
     let pipeline = PipelineSpec {
         source: SourceSpec::Directory,
         stages: vec![
-            StageSpec::Select(
-                SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid"),
-            ),
-            StageSpec::Generate(
-                artifact::GenerateStageSpec::new("GENERATED.txt", "generated content")
-                    .expect("generate spec is valid"),
-            ),
+            StageSpec::Select(SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid")),
+            StageSpec::Generate(artifact::GenerateStageSpec::new("GENERATED.txt", "generated content").expect("generate spec is valid")),
             StageSpec::Manifest,
             StageSpec::Validate,
         ],
@@ -826,16 +805,9 @@ fn declarative_pipeline_chaining_multiple_transforms() {
     let pipeline = PipelineSpec {
         source: SourceSpec::Directory,
         stages: vec![
-            StageSpec::Select(
-                SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid"),
-            ),
-            StageSpec::Transform(
-                artifact::TransformStageSpec::new("dist").expect("prefix is valid"),
-            ),
-            StageSpec::Generate(
-                artifact::GenerateStageSpec::new("dist/BUILD.txt", "built")
-                    .expect("generate spec is valid"),
-            ),
+            StageSpec::Select(SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid")),
+            StageSpec::Transform(artifact::TransformStageSpec::new("dist").expect("prefix is valid")),
+            StageSpec::Generate(artifact::GenerateStageSpec::new("dist/BUILD.txt", "built").expect("generate spec is valid")),
             StageSpec::Manifest,
             StageSpec::Validate,
         ],
@@ -869,36 +841,28 @@ fn declarative_pipeline_chaining_multiple_transforms() {
 
     assert_eq!(
         built.stage_trace(),
-        &[
-            "source",
-            "select",
-            "transform",
-            "generate",
-            "manifest",
-            "validate"
-        ]
+        &["source", "select", "transform", "generate", "manifest", "validate"]
     );
 }
 
 #[test]
 fn stage_identity_is_deterministic() {
-    let stage_a = StageSpec::Transform(artifact::TransformStageSpec::new("prefix").expect("valid"));
-    let stage_b = StageSpec::Transform(artifact::TransformStageSpec::new("prefix").expect("valid"));
-    let stage_c =
-        StageSpec::Transform(artifact::TransformStageSpec::new("different").expect("valid"));
+    let stage_a = StageSpec::Transform(
+        artifact::TransformStageSpec::new("prefix").expect("valid")
+    );
+    let stage_b = StageSpec::Transform(
+        artifact::TransformStageSpec::new("prefix").expect("valid")
+    );
+    let stage_c = StageSpec::Transform(
+        artifact::TransformStageSpec::new("different").expect("valid")
+    );
 
     let stage_a_id = stage_a.identity().expect("identity should compute");
     let stage_b_id = stage_b.identity().expect("identity should compute");
     let stage_c_id = stage_c.identity().expect("identity should compute");
 
-    assert_eq!(
-        stage_a_id, stage_b_id,
-        "same stage spec should have same identity"
-    );
-    assert_ne!(
-        stage_a_id, stage_c_id,
-        "different parameters should have different identity"
-    );
+    assert_eq!(stage_a_id, stage_b_id, "same stage spec should have same identity");
+    assert_ne!(stage_a_id, stage_c_id, "different parameters should have different identity");
 }
 
 #[test]
@@ -906,12 +870,8 @@ fn same_declarative_pipeline_produces_same_artifact() {
     let pipeline = PipelineSpec {
         source: SourceSpec::Directory,
         stages: vec![
-            StageSpec::Select(
-                SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid"),
-            ),
-            StageSpec::Transform(
-                artifact::TransformStageSpec::new("archive").expect("prefix is valid"),
-            ),
+            StageSpec::Select(SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid")),
+            StageSpec::Transform(artifact::TransformStageSpec::new("archive").expect("prefix is valid")),
             StageSpec::Manifest,
             StageSpec::Validate,
         ],
@@ -949,12 +909,8 @@ fn transformed_artifact_materializes_through_declarative_pipeline() {
     let pipeline = PipelineSpec {
         source: SourceSpec::Directory,
         stages: vec![
-            StageSpec::Select(
-                SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid"),
-            ),
-            StageSpec::Transform(
-                artifact::TransformStageSpec::new("bundle").expect("prefix is valid"),
-            ),
+            StageSpec::Select(SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid")),
+            StageSpec::Transform(artifact::TransformStageSpec::new("bundle").expect("prefix is valid")),
             StageSpec::Manifest,
             StageSpec::Validate,
         ],
@@ -984,13 +940,8 @@ fn redacted_content_cannot_be_resolved() {
     let pipeline = PipelineSpec {
         source: SourceSpec::Directory,
         stages: vec![
-            StageSpec::Select(
-                SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid"),
-            ),
-            StageSpec::Redact(
-                artifact::RedactStageSpec::new(vec!["README.md".to_string()])
-                    .expect("redact spec is valid"),
-            ),
+            StageSpec::Select(SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid")),
+            StageSpec::Redact(artifact::RedactStageSpec::new(vec!["README.md".to_string()]).expect("redact spec is valid")),
             StageSpec::Manifest,
             StageSpec::Validate,
         ],
@@ -1019,12 +970,8 @@ fn declarative_pipeline_round_trip_preserves_identity() {
     let original_pipeline = PipelineSpec {
         source: SourceSpec::Directory,
         stages: vec![
-            StageSpec::Select(
-                SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid"),
-            ),
-            StageSpec::Transform(
-                artifact::TransformStageSpec::new("dist").expect("prefix is valid"),
-            ),
+            StageSpec::Select(SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid")),
+            StageSpec::Transform(artifact::TransformStageSpec::new("dist").expect("prefix is valid")),
             StageSpec::Manifest,
             StageSpec::Validate,
         ],
@@ -1042,8 +989,8 @@ fn declarative_pipeline_round_trip_preserves_identity() {
         .expect("should serialize");
     let original_identity = original_pipeline.identity().expect("should have identity");
 
-    let rebuilt_pipeline =
-        serde_json::from_slice::<serde_json::Value>(&original_bytes).expect("should deserialize");
+    let rebuilt_pipeline = serde_json::from_slice::<serde_json::Value>(&original_bytes)
+        .expect("should deserialize");
     let rebuilt_bytes = serde_json::to_vec(&rebuilt_pipeline).expect("should reserialize");
 
     assert_eq!(
@@ -1080,17 +1027,16 @@ fn authorization_with_allow_all_policy_succeeds() {
     assert!(result.is_ok(), "allow_all policy should permit execution");
 
     let (built, evidence) = result.expect("execution should succeed");
-    assert_eq!(
-        evidence.authorization_decision.decision,
-        AuthorizationResult::Allowed
-    );
+    assert_eq!(evidence.authorization_decision.decision, AuthorizationResult::Allowed);
     assert!(!built.artifact().entries.is_empty());
 }
 
 #[test]
 fn authorization_with_restricted_policy_denies_missing_capabilities() {
     let pipeline = default_directory_zip_pipeline();
-    let policy = AllowListPolicy::new(vec![("filesystem.read".to_string(), "1".to_string())]);
+    let policy = AllowListPolicy::new(vec![
+        ("filesystem.read".to_string(), "1".to_string()),
+    ]);
 
     let result = pipeline.build_with_authorization(example_dir(), &policy);
     assert!(
@@ -1113,10 +1059,7 @@ fn authorization_with_matching_policy_succeeds() {
     assert!(result.is_ok(), "matching policy should permit execution");
 
     let (_, evidence) = result.expect("execution should succeed");
-    assert_eq!(
-        evidence.authorization_decision.decision,
-        AuthorizationResult::Allowed
-    );
+    assert_eq!(evidence.authorization_decision.decision, AuthorizationResult::Allowed);
     let expected_count = pipeline.required_capabilities().len() + 1;
     assert_eq!(
         evidence.granted_capabilities.len(),
@@ -1141,10 +1084,7 @@ fn authorization_decision_identifies_denied_capabilities() {
     );
 
     let result = pipeline.build_with_authorization(example_dir(), &policy);
-    assert!(
-        result.is_err(),
-        "policy missing some capabilities should deny"
-    );
+    assert!(result.is_err(), "policy missing some capabilities should deny");
 }
 
 #[test]
@@ -1161,14 +1101,8 @@ fn execution_evidence_records_successful_execution() {
         built.artifact().identity,
         "evidence should reference the artifact produced"
     );
-    assert!(
-        !evidence.stage_trace.is_empty(),
-        "evidence should record stage execution"
-    );
-    assert!(
-        !evidence.used_capabilities.is_empty(),
-        "evidence should record capabilities used"
-    );
+    assert!(!evidence.stage_trace.is_empty(), "evidence should record stage execution");
+    assert!(!evidence.used_capabilities.is_empty(), "evidence should record capabilities used");
 }
 
 #[test]
@@ -1176,12 +1110,8 @@ fn pipeline_with_declarative_transform_requires_correct_capabilities() {
     let pipeline = PipelineSpec {
         source: SourceSpec::Directory,
         stages: vec![
-            StageSpec::Select(
-                SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid"),
-            ),
-            StageSpec::Transform(
-                artifact::TransformStageSpec::new("dist").expect("prefix is valid"),
-            ),
+            StageSpec::Select(SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid")),
+            StageSpec::Transform(artifact::TransformStageSpec::new("dist").expect("prefix is valid")),
             StageSpec::Manifest,
             StageSpec::Validate,
         ],
@@ -1204,10 +1134,7 @@ fn pipeline_with_declarative_transform_requires_correct_capabilities() {
     ]);
 
     let result = pipeline.build_with_authorization(example_dir(), &policy);
-    assert!(
-        result.is_ok(),
-        "pipeline with matching policy should execute"
-    );
+    assert!(result.is_ok(), "pipeline with matching policy should execute");
 }
 
 #[test]
@@ -1222,7 +1149,8 @@ fn authorization_decision_is_deterministic() {
     let (_, evidence2) = result2.expect("second execution should succeed");
 
     assert_eq!(
-        evidence1.authorization_decision.decision, evidence2.authorization_decision.decision,
+        evidence1.authorization_decision.decision,
+        evidence2.authorization_decision.decision,
         "authorization decision should be deterministic"
     );
     assert_eq!(
@@ -1234,13 +1162,12 @@ fn authorization_decision_is_deterministic() {
 #[test]
 fn denied_pipeline_produces_no_partial_execution() {
     let pipeline = default_directory_zip_pipeline();
-    let policy = AllowListPolicy::new(vec![("filesystem.read".to_string(), "1".to_string())]);
+    let policy = AllowListPolicy::new(vec![
+        ("filesystem.read".to_string(), "1".to_string()),
+    ]);
 
     let result = pipeline.build_with_authorization(example_dir(), &policy);
-    assert!(
-        result.is_err(),
-        "denied authorization should prevent execution"
-    );
+    assert!(result.is_err(), "denied authorization should prevent execution");
 }
 
 #[test]
@@ -1258,10 +1185,7 @@ fn capability_policy_identity_is_deterministic() {
     let id1 = policy1.identity();
     let id2 = policy2.identity();
 
-    assert_eq!(
-        id1, id2,
-        "same policy configuration should have same identity"
-    );
+    assert_eq!(id1, id2, "same policy configuration should have same identity");
 }
 
 #[test]
@@ -1313,9 +1237,7 @@ fn pipeline_inspection_includes_materializer_capability() {
 fn pipeline_inspection_identity_is_deterministic() {
     let pipeline = default_directory_zip_pipeline();
     let inspection1 = pipeline.inspect().expect("first inspection should succeed");
-    let inspection2 = pipeline
-        .inspect()
-        .expect("second inspection should succeed");
+    let inspection2 = pipeline.inspect().expect("second inspection should succeed");
 
     assert_eq!(
         inspection1.pipeline_identity, inspection2.pipeline_identity,
@@ -1357,13 +1279,12 @@ fn execution_evidence_validates_successfully() {
 #[test]
 fn denied_authorization_produces_zero_stages() {
     let pipeline = default_directory_zip_pipeline();
-    let policy = AllowListPolicy::new(vec![("filesystem.read".to_string(), "1".to_string())]);
+    let policy = AllowListPolicy::new(vec![
+        ("filesystem.read".to_string(), "1".to_string()),
+    ]);
 
     let result = pipeline.build_with_authorization(example_dir(), &policy);
-    assert!(
-        result.is_err(),
-        "denied authorization should prevent execution"
-    );
+    assert!(result.is_err(), "denied authorization should prevent execution");
 }
 
 #[test]
@@ -1404,10 +1325,7 @@ fn execution_evidence_semantic_portion_is_deterministic() {
         .to_canonical_bytes()
         .expect("second canonical should serialize");
 
-    assert_eq!(
-        canonical1, canonical2,
-        "semantic evidence should be deterministic"
-    );
+    assert_eq!(canonical1, canonical2, "semantic evidence should be deterministic");
 }
 
 #[test]
@@ -1427,8 +1345,7 @@ fn artifact_identity_unchanged_by_authorization() {
     let (artifact2, _) = result_allow_list.expect("allow_list should succeed");
 
     assert_eq!(
-        artifact1.artifact().identity,
-        artifact2.artifact().identity,
+        artifact1.artifact().identity, artifact2.artifact().identity,
         "artifact identity should be independent of authorization policy"
     );
 }
@@ -1448,20 +1365,11 @@ fn same_artifact_materializes_as_zip_and_tar() {
         .materialize_to_vec(artifact, &built)
         .expect("TAR should materialize");
 
-    assert!(
-        !zip_bytes.is_empty(),
-        "ZIP materialization should produce bytes"
-    );
-    assert!(
-        !tar_bytes.is_empty(),
-        "TAR materialization should produce bytes"
-    );
+    assert!(!zip_bytes.is_empty(), "ZIP materialization should produce bytes");
+    assert!(!tar_bytes.is_empty(), "TAR materialization should produce bytes");
     let zip_digest = digest_for_bytes(&zip_bytes);
     let tar_digest = digest_for_bytes(&tar_bytes);
-    assert_ne!(
-        zip_digest, tar_digest,
-        "ZIP and TAR should have different digests"
-    );
+    assert_ne!(zip_digest, tar_digest, "ZIP and TAR should have different digests");
 }
 
 #[test]
@@ -1469,8 +1377,9 @@ fn pipeline_inspection_canonical_json_is_valid() {
     let pipeline = default_directory_zip_pipeline();
     let inspection = pipeline.inspect().expect("inspection should succeed");
 
-    let parsed: serde_json::Value = serde_json::from_str(&inspection.canonical_pipeline_json)
-        .expect("canonical JSON should be valid");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&inspection.canonical_pipeline_json)
+            .expect("canonical JSON should be valid");
 
     assert_eq!(parsed["schema"], "pipeline.v1");
     assert!(!parsed["stages"].as_array().unwrap().is_empty());
@@ -1485,18 +1394,12 @@ fn execution_evidence_distinguishes_requested_granted_used() {
         .build_with_authorization(example_dir(), &policy)
         .expect("execution should succeed");
 
-    assert!(
-        !evidence.requested_capabilities.is_empty(),
-        "evidence should record requested"
-    );
+    assert!(!evidence.requested_capabilities.is_empty(), "evidence should record requested");
     assert!(
         !evidence.granted_capabilities.is_empty(),
         "evidence should record granted"
     );
-    assert!(
-        !evidence.used_capabilities.is_empty(),
-        "evidence should record used"
-    );
+    assert!(!evidence.used_capabilities.is_empty(), "evidence should record used");
 
     assert_eq!(
         evidence.granted_capabilities.len(),
@@ -1517,10 +1420,7 @@ fn evidence_validates_artifact_identity_on_success() {
         built.artifact().identity,
         "evidence should reference the produced artifact"
     );
-    assert!(
-        evidence.validate().is_ok(),
-        "valid evidence should pass validation"
-    );
+    assert!(evidence.validate().is_ok(), "valid evidence should pass validation");
 }
 
 struct StaticResolver {
@@ -1577,7 +1477,11 @@ fn directory_zip_recipe_compiles_correctly() {
     let recipe = RecipeSpec::directory_zip();
     let pipeline = recipe.compile().expect("compilation should succeed");
 
-    let stage_labels: Vec<_> = pipeline.stages.iter().map(|s| s.label()).collect();
+    let stage_labels: Vec<_> = pipeline
+        .stages
+        .iter()
+        .map(|s| s.label())
+        .collect();
 
     assert_eq!(stage_labels, vec!["select", "manifest", "validate"]);
     assert!(
@@ -1594,7 +1498,11 @@ fn directory_tar_recipe_compiles_correctly() {
     let recipe = RecipeSpec::directory_tar();
     let pipeline = recipe.compile().expect("compilation should succeed");
 
-    let stage_labels: Vec<_> = pipeline.stages.iter().map(|s| s.label()).collect();
+    let stage_labels: Vec<_> = pipeline
+        .stages
+        .iter()
+        .map(|s| s.label())
+        .collect();
 
     assert_eq!(stage_labels, vec!["select", "manifest", "validate"]);
     assert!(
@@ -1612,12 +1520,13 @@ fn wasm_recipe_compiles_correctly() {
     let recipe = RecipeSpec::wasm();
     let pipeline = recipe.compile().expect("compilation should succeed");
 
-    let stage_labels: Vec<_> = pipeline.stages.iter().map(|s| s.label()).collect();
+    let stage_labels: Vec<_> = pipeline
+        .stages
+        .iter()
+        .map(|s| s.label())
+        .collect();
 
-    assert_eq!(
-        stage_labels,
-        vec!["select", "compile", "manifest", "validate"]
-    );
+    assert_eq!(stage_labels, vec!["select", "compile", "manifest", "validate"]);
     assert!(
         pipeline
             .capabilities
@@ -1633,19 +1542,12 @@ fn identical_recipes_compile_to_identical_pipelines() {
     let recipe2 = RecipeSpec::directory_zip();
 
     let pipeline1 = recipe1.compile().expect("first compilation should succeed");
-    let pipeline2 = recipe2
-        .compile()
-        .expect("second compilation should succeed");
+    let pipeline2 = recipe2.compile().expect("second compilation should succeed");
 
     let id1 = pipeline1.identity().expect("first identity should compute");
-    let id2 = pipeline2
-        .identity()
-        .expect("second identity should compute");
+    let id2 = pipeline2.identity().expect("second identity should compute");
 
-    assert_eq!(
-        id1, id2,
-        "identical recipes should produce identical pipeline identities"
-    );
+    assert_eq!(id1, id2, "identical recipes should produce identical pipeline identities");
 }
 
 #[test]
@@ -1677,10 +1579,7 @@ fn recipe_compiled_pipeline_executes() {
         .expect("execution should succeed");
 
     assert!(!built.artifact().identity.is_empty());
-    assert_eq!(
-        built.stage_trace(),
-        ["source", "select", "manifest", "validate"]
-    );
+    assert_eq!(built.stage_trace(), ["source", "select", "manifest", "validate"]);
 }
 
 #[test]
@@ -1690,10 +1589,7 @@ fn recipe_compiled_pipeline_with_authorization_succeeds() {
     let policy = AllowAllPolicy;
 
     let result = pipeline.build_with_authorization(example_dir(), &policy);
-    assert!(
-        result.is_ok(),
-        "recipe execution with AllowAllPolicy should succeed"
-    );
+    assert!(result.is_ok(), "recipe execution with AllowAllPolicy should succeed");
 
     let (built, evidence) = result.expect("execution should succeed");
     assert!(!built.artifact().identity.is_empty());
@@ -1718,19 +1614,11 @@ fn different_recipe_types_have_different_identities() {
     let zip_recipe = RecipeSpec::directory_zip();
     let tar_recipe = RecipeSpec::directory_tar();
 
-    let zip_pipeline = zip_recipe
-        .compile()
-        .expect("ZIP compilation should succeed");
-    let tar_pipeline = tar_recipe
-        .compile()
-        .expect("TAR compilation should succeed");
+    let zip_pipeline = zip_recipe.compile().expect("ZIP compilation should succeed");
+    let tar_pipeline = tar_recipe.compile().expect("TAR compilation should succeed");
 
-    let zip_id = zip_pipeline
-        .identity()
-        .expect("ZIP identity should compute");
-    let tar_id = tar_pipeline
-        .identity()
-        .expect("TAR identity should compute");
+    let zip_id = zip_pipeline.identity().expect("ZIP identity should compute");
+    let tar_id = tar_pipeline.identity().expect("TAR identity should compute");
 
     assert_ne!(
         zip_id, tar_id,
@@ -1768,8 +1656,7 @@ fn recipe_compiled_artifact_identity_is_independent_of_authorization() {
         .expect("AllowListPolicy should succeed");
 
     assert_eq!(
-        artifact1.artifact().identity,
-        artifact2.artifact().identity,
+        artifact1.artifact().identity, artifact2.artifact().identity,
         "artifact identity should not depend on authorization policy"
     );
 }
@@ -1816,11 +1703,9 @@ fn recipe_materialization_follows_compiled_pipeline() {
         .materialize_to_vec(built.artifact(), &built)
         .expect("materialization should succeed");
 
-    assert!(
-        !zip_bytes.is_empty(),
-        "ZIP materialization should produce bytes"
-    );
+    assert!(!zip_bytes.is_empty(), "ZIP materialization should produce bytes");
 }
+
 
 // Phase 5 Completion: WASM Build Semantics and Target Compilation
 
@@ -1870,17 +1755,10 @@ fn compile_stage_identity_is_deterministic() {
     let compile_stage1 = &pipeline1.stages[1];
     let compile_stage2 = &pipeline2.stages[1];
 
-    let id1 = compile_stage1
-        .identity()
-        .expect("first stage identity should compute");
-    let id2 = compile_stage2
-        .identity()
-        .expect("second stage identity should compute");
+    let id1 = compile_stage1.identity().expect("first stage identity should compute");
+    let id2 = compile_stage2.identity().expect("second stage identity should compute");
 
-    assert_eq!(
-        id1, id2,
-        "identical compile stages should have identical identities"
-    );
+    assert_eq!(id1, id2, "identical compile stages should have identical identities");
 }
 
 #[test]
@@ -1945,7 +1823,10 @@ fn wasm_execution_evidence_records_compile_stage() {
         .build_with_authorization(example_dir(), &AllowAllPolicy)
         .expect("execution should succeed");
 
-    let compile_stage = evidence.stage_trace.iter().find(|s| s.label == "compile");
+    let compile_stage = evidence
+        .stage_trace
+        .iter()
+        .find(|s| s.label == "compile");
 
     assert!(
         compile_stage.is_some(),
@@ -2002,17 +1883,12 @@ fn wasm_artifact_identity_independent_of_evidence() {
         .expect("second execution should succeed");
 
     assert_eq!(
-        built1.artifact().identity,
-        built2.artifact().identity,
+        built1.artifact().identity, built2.artifact().identity,
         "artifact identity should be stable across executions"
     );
 
-    let evidence_id1 = evidence1
-        .identity()
-        .expect("first evidence identity should compute");
-    let evidence_id2 = evidence2
-        .identity()
-        .expect("second evidence identity should compute");
+    let evidence_id1 = evidence1.identity().expect("first evidence identity should compute");
+    let evidence_id2 = evidence2.identity().expect("second evidence identity should compute");
 
     assert_eq!(
         evidence_id1, evidence_id2,
@@ -2020,8 +1896,7 @@ fn wasm_artifact_identity_independent_of_evidence() {
     );
 
     assert_ne!(
-        built1.artifact().identity,
-        evidence_id1,
+        built1.artifact().identity, evidence_id1,
         "artifact identity should not include evidence identity"
     );
 }
@@ -2048,8 +1923,7 @@ fn wasm_artifact_identity_independent_of_authorization_policy() {
         .expect("AllowListPolicy should succeed");
 
     assert_eq!(
-        artifact1.artifact().identity,
-        artifact2.artifact().identity,
+        artifact1.artifact().identity, artifact2.artifact().identity,
         "artifact identity should not depend on authorization policy"
     );
 }
@@ -2060,9 +1934,7 @@ fn wasm_recipe_compilation_is_pure_and_deterministic() {
     let recipe2 = RecipeSpec::wasm();
 
     let pipeline1 = recipe1.compile().expect("first compilation should succeed");
-    let pipeline2 = recipe2
-        .compile()
-        .expect("second compilation should succeed");
+    let pipeline2 = recipe2.compile().expect("second compilation should succeed");
 
     let canonical1 = pipeline1
         .to_canonical_bytes()
@@ -2090,8 +1962,7 @@ fn compile_stage_participates_in_artifact_transformation() {
         .expect("second execution should succeed");
 
     assert_eq!(
-        built1.artifact().identity,
-        built2.artifact().identity,
+        built1.artifact().identity, built2.artifact().identity,
         "same source and pipeline should produce same artifact identity"
     );
 
@@ -2137,12 +2008,8 @@ fn directory_zip_and_wasm_both_use_pipeline_executor() {
     let zip_recipe = RecipeSpec::directory_zip();
     let wasm_recipe = RecipeSpec::wasm();
 
-    let zip_pipeline = zip_recipe
-        .compile()
-        .expect("ZIP compilation should succeed");
-    let wasm_pipeline = wasm_recipe
-        .compile()
-        .expect("WASM compilation should succeed");
+    let zip_pipeline = zip_recipe.compile().expect("ZIP compilation should succeed");
+    let wasm_pipeline = wasm_recipe.compile().expect("WASM compilation should succeed");
 
     let zip_built = zip_pipeline
         .build_from_directory(example_dir())
@@ -2161,8 +2028,7 @@ fn directory_zip_and_wasm_both_use_pipeline_executor() {
     );
 
     assert_ne!(
-        zip_built.artifact().identity,
-        wasm_built.artifact().identity,
+        zip_built.artifact().identity, wasm_built.artifact().identity,
         "different recipes should produce different artifacts"
     );
 }
@@ -2178,32 +2044,29 @@ fn all_phase_1_5_tests_remain_passing() {
     assert!(!wasm_pipeline.stages.is_empty());
 }
 
+
 // Phase 6 Foundation: Public API and CLI Surface
 
 #[test]
 fn public_api_recipe_compiles() {
     use artifact::ArtifactSDK;
-
+    
     let recipe = artifact::RecipeSpec::wasm();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
-
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
+    
     assert!(pipeline.required_capabilities().len() > 0);
 }
 
 #[test]
 fn public_api_inspection_works() {
     use artifact::ArtifactSDK;
-
+    
     let recipe = artifact::RecipeSpec::wasm();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
     let inspection = pipeline.inspect().expect("inspection should succeed");
-
+    
     assert!(!inspection.pipeline_identity.is_empty());
     assert!(!inspection.stages.is_empty());
     assert!(!inspection.required_capabilities.is_empty());
@@ -2212,17 +2075,15 @@ fn public_api_inspection_works() {
 #[test]
 fn public_api_execution_succeeds() {
     use artifact::ArtifactSDK;
-
+    
     let recipe = artifact::RecipeSpec::directory_zip();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
-
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
+    
     let (artifact, evidence) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
         .expect("execution should succeed");
-
+    
     assert!(!artifact.identity().is_empty());
     assert!(evidence.is_successful());
 }
@@ -2230,17 +2091,15 @@ fn public_api_execution_succeeds() {
 #[test]
 fn public_api_artifact_entries_accessible() {
     use artifact::ArtifactSDK;
-
+    
     let recipe = artifact::RecipeSpec::directory_zip();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
-
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
+    
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
         .expect("execution should succeed");
-
+    
     let entries = artifact.entries();
     assert!(!entries.is_empty(), "artifact should have entries");
     assert!(
@@ -2252,21 +2111,19 @@ fn public_api_artifact_entries_accessible() {
 #[test]
 fn public_api_evidence_accessible() {
     use artifact::ArtifactSDK;
-
+    
     let recipe = artifact::RecipeSpec::wasm();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
-
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
+    
     let (_, evidence) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
         .expect("execution should succeed");
-
+    
     let decision = evidence.authorization_decision();
     assert!(decision.allowed, "authorization should be allowed");
     assert!(!decision.granted_capabilities.is_empty());
-
+    
     let stages = evidence.stage_trace();
     assert!(!stages.is_empty(), "should have executed stages");
 }
@@ -2274,15 +2131,15 @@ fn public_api_evidence_accessible() {
 #[test]
 fn public_api_denies_correctly() {
     use artifact::ArtifactSDK;
-
+    
     let recipe = artifact::RecipeSpec::wasm();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
-
-    let policy = AllowListPolicy::new(vec![("filesystem.read".to_string(), "1".to_string())]);
-
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
+    
+    let policy = AllowListPolicy::new(vec![
+        ("filesystem.read".to_string(), "1".to_string()),
+    ]);
+    
     let result = pipeline.build_with_authorization(example_dir(), &policy);
     assert!(result.is_err(), "missing capabilities should deny");
 }
@@ -2319,9 +2176,7 @@ fn typescript_sdk_delegates_recipe_compilation() {
 
     let recipe = artifact::RecipeSpec::directory_zip();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
 
     // The pipeline should have expected structure - proof Rust did the compilation
     let inspection = pipeline.inspect().expect("inspection should succeed");
@@ -2339,9 +2194,7 @@ fn typescript_sdk_delegates_inspection() {
 
     let recipe = artifact::RecipeSpec::directory_zip();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
 
     let inspection1 = pipeline.inspect().expect("inspection should succeed");
     let inspection2 = pipeline.inspect().expect("inspection should succeed");
@@ -2387,9 +2240,7 @@ fn typescript_sdk_delegates_authorization() {
 
     let recipe = artifact::RecipeSpec::wasm();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
 
     let (_, evidence) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -2400,10 +2251,7 @@ fn typescript_sdk_delegates_authorization() {
     // Authorization decision comes from Rust policy evaluation
     assert!(decision.allowed);
     assert!(
-        decision
-            .granted_capabilities
-            .iter()
-            .any(|c| c.name == "compile.wasm"),
+        decision.granted_capabilities.iter().any(|c| c.name == "compile.wasm"),
         "wasm recipe should have compile.wasm granted"
     );
 }
@@ -2416,13 +2264,9 @@ fn typescript_sdk_delegates_execution() {
 
     let recipe = artifact::RecipeSpec::directory_zip();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
 
-    let artifact = pipeline
-        .build_from_directory(example_dir())
-        .expect("build should succeed");
+    let artifact = pipeline.build_from_directory(example_dir()).expect("build should succeed");
 
     // Build produces artifact with expected structure
     assert!(!artifact.identity().is_empty());
@@ -2437,9 +2281,7 @@ fn typescript_sdk_does_not_recompute_artifact_identity() {
 
     let recipe = artifact::RecipeSpec::directory_zip();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
 
     let (artifact1, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -2461,9 +2303,7 @@ fn typescript_sdk_does_not_duplicate_stage_execution() {
 
     let recipe = artifact::RecipeSpec::wasm();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
 
     let (_, evidence) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -2490,9 +2330,7 @@ fn typescript_sdk_serialization_round_trip() {
 
     let recipe = artifact::RecipeSpec::directory_zip();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
 
     // Get serialized forms
     let inspection1 = pipeline.inspect().expect("inspection should succeed");
@@ -2511,9 +2349,7 @@ fn typescript_sdk_evidence_contains_all_required_fields() {
 
     let recipe = artifact::RecipeSpec::wasm();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
 
     let (artifact, evidence) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -2540,9 +2376,7 @@ fn typescript_sdk_wasm_recipe_compilation() {
 
     let recipe = artifact::RecipeSpec::wasm();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -2569,9 +2403,7 @@ fn typescript_sdk_cli_pattern_compatible() {
     // CLI pattern: parse args → create RecipeSpec → compile → inspect → authorize → execute
     let recipe = artifact::RecipeSpec::directory_zip();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
 
     // Inspect
     let _inspection = pipeline.inspect().expect("inspection should succeed");
@@ -2590,13 +2422,11 @@ fn typescript_sdk_cli_pattern_compatible() {
 
 #[test]
 fn application_artifact_wraps_wasm_artifact() {
-    use artifact::{ApplicationArtifact, ArtifactSDK};
+    use artifact::{ArtifactSDK, ApplicationArtifact};
 
     let recipe = artifact::RecipeSpec::wasm();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
 
     let (built_artifact, evidence) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -2613,13 +2443,11 @@ fn application_artifact_wraps_wasm_artifact() {
 
 #[test]
 fn application_artifact_identity_is_artifact_identity() {
-    use artifact::{ApplicationArtifact, ArtifactSDK};
+    use artifact::{ArtifactSDK, ApplicationArtifact};
 
     let recipe = artifact::RecipeSpec::wasm();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
 
     let (built_artifact1, evidence1) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -2629,73 +2457,53 @@ fn application_artifact_identity_is_artifact_identity() {
         .build_with_authorization(example_dir(), &AllowAllPolicy)
         .expect("execution should succeed");
 
-    let app1 = ApplicationArtifact::from_wasm_artifact(
-        built_artifact1.as_artifact().clone(),
-        evidence1.used_capabilities(),
-    )
-    .expect("should create app artifact");
-    let app2 = ApplicationArtifact::from_wasm_artifact(
-        built_artifact2.as_artifact().clone(),
-        evidence2.used_capabilities(),
-    )
-    .expect("should create app artifact");
+    let app1 =
+        ApplicationArtifact::from_wasm_artifact(built_artifact1.as_artifact().clone(), evidence1.used_capabilities())
+            .expect("should create app artifact");
+    let app2 =
+        ApplicationArtifact::from_wasm_artifact(built_artifact2.as_artifact().clone(), evidence2.used_capabilities())
+            .expect("should create app artifact");
 
-    assert_eq!(
-        app1.identity(),
-        app2.identity(),
-        "same recipe produces same application identity"
-    );
+    assert_eq!(app1.identity(), app2.identity(), "same recipe produces same application identity");
 }
 
 #[test]
 fn application_manifest_is_deterministic() {
-    use artifact::{ApplicationArtifact, ArtifactSDK};
+    use artifact::{ArtifactSDK, ApplicationArtifact};
 
     let recipe = artifact::RecipeSpec::wasm();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
 
     let (built_artifact, evidence) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
         .expect("execution should succeed");
 
-    let app = ApplicationArtifact::from_wasm_artifact(
-        built_artifact.as_artifact().clone(),
-        evidence.used_capabilities(),
-    )
-    .expect("should create app artifact");
+    let app =
+        ApplicationArtifact::from_wasm_artifact(built_artifact.as_artifact().clone(), evidence.used_capabilities())
+            .expect("should create app artifact");
 
     let manifest_json1 = app.manifest().to_json().expect("manifest should serialize");
     let manifest_json2 = app.manifest().to_json().expect("manifest should serialize");
 
-    assert_eq!(
-        manifest_json1, manifest_json2,
-        "manifest should be deterministic"
-    );
+    assert_eq!(manifest_json1, manifest_json2, "manifest should be deterministic");
 }
 
 #[test]
 fn application_manifest_contains_declared_capabilities() {
-    use artifact::{ApplicationArtifact, ArtifactSDK};
+    use artifact::{ArtifactSDK, ApplicationArtifact};
 
     let recipe = artifact::RecipeSpec::wasm();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
 
     let (built_artifact, evidence) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
         .expect("execution should succeed");
 
     let capabilities = evidence.used_capabilities();
-    let app = ApplicationArtifact::from_wasm_artifact(
-        built_artifact.as_artifact().clone(),
-        capabilities.clone(),
-    )
-    .expect("should create app artifact");
+    let app = ApplicationArtifact::from_wasm_artifact(built_artifact.as_artifact().clone(), capabilities.clone())
+        .expect("should create app artifact");
 
     assert_eq!(
         app.declared_capabilities().len(),
@@ -2706,92 +2514,68 @@ fn application_manifest_contains_declared_capabilities() {
 
 #[test]
 fn application_manifest_has_entrypoint() {
-    use artifact::{ApplicationArtifact, ArtifactSDK};
+    use artifact::{ArtifactSDK, ApplicationArtifact};
 
     let recipe = artifact::RecipeSpec::wasm();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
 
     let (built_artifact, evidence) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
         .expect("execution should succeed");
 
-    let app = ApplicationArtifact::from_wasm_artifact(
-        built_artifact.as_artifact().clone(),
-        evidence.used_capabilities(),
-    )
-    .expect("should create app artifact");
+    let app = ApplicationArtifact::from_wasm_artifact(built_artifact.as_artifact().clone(), evidence.used_capabilities())
+        .expect("should create app artifact");
 
     assert_eq!(app.manifest().entrypoint, "application.wasm");
 }
 
 #[test]
 fn application_artifact_has_executable() {
-    use artifact::{ApplicationArtifact, ArtifactSDK};
+    use artifact::{ArtifactSDK, ApplicationArtifact};
 
     let recipe = artifact::RecipeSpec::wasm();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
 
     let (built_artifact, evidence) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
         .expect("execution should succeed");
 
-    let app = ApplicationArtifact::from_wasm_artifact(
-        built_artifact.as_artifact().clone(),
-        evidence.used_capabilities(),
-    )
-    .expect("should create app artifact");
+    let app = ApplicationArtifact::from_wasm_artifact(built_artifact.as_artifact().clone(), evidence.used_capabilities())
+        .expect("should create app artifact");
 
-    assert!(
-        app.has_executable(),
-        "should have application.wasm executable"
-    );
+    assert!(app.has_executable(), "should have application.wasm executable");
 }
 
 #[test]
 fn application_artifact_remains_thin_wrapper() {
-    use artifact::{ApplicationArtifact, ArtifactSDK};
+    use artifact::{ArtifactSDK, ApplicationArtifact};
 
     let recipe = artifact::RecipeSpec::wasm();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
 
     let (built_artifact, evidence) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
         .expect("execution should succeed");
 
     let artifact_id = built_artifact.identity();
-    let app = ApplicationArtifact::from_wasm_artifact(
-        built_artifact.as_artifact().clone(),
-        evidence.used_capabilities(),
-    )
-    .expect("should create app artifact");
+    let app = ApplicationArtifact::from_wasm_artifact(built_artifact.as_artifact().clone(), evidence.used_capabilities())
+        .expect("should create app artifact");
 
     // ApplicationArtifact should not have its own identity computation
     // It only wraps and interprets existing artifact
-    assert_eq!(
-        app.identity(),
-        artifact_id,
-        "application should use artifact identity, not compute separate one"
-    );
+    assert_eq!(app.identity(), artifact_id, "application should use artifact identity, not compute separate one");
 }
 
 #[test]
 fn application_artifact_manifest_does_not_affect_identity() {
-    use artifact::{ApplicationArtifact, ArtifactSDK};
+    use artifact::{ArtifactSDK, ApplicationArtifact};
 
     let recipe = artifact::RecipeSpec::wasm();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
 
     let (built_artifact, evidence) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -2807,29 +2591,22 @@ fn application_artifact_manifest_does_not_affect_identity() {
         .expect("should create app artifact");
 
     // Identity should remain same because artifact didn't change
-    assert_eq!(
-        app1.identity(),
-        app2.identity(),
-        "manifest differences should not affect identity"
-    );
+    assert_eq!(app1.identity(), app2.identity(), "manifest differences should not affect identity");
 }
 
 #[test]
 fn application_artifact_non_wasm_rejected() {
-    use artifact::{ApplicationArtifact, ArtifactSDK};
+    use artifact::{ArtifactSDK, ApplicationArtifact};
 
     let recipe = artifact::RecipeSpec::directory_zip();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
 
     let (built_artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
         .expect("execution should succeed");
 
-    let result =
-        ApplicationArtifact::from_wasm_artifact(built_artifact.as_artifact().clone(), vec![]);
+    let result = ApplicationArtifact::from_wasm_artifact(built_artifact.as_artifact().clone(), vec![]);
 
     assert!(
         result.is_err(),
@@ -2840,24 +2617,19 @@ fn application_artifact_non_wasm_rejected() {
 #[test]
 fn application_artifact_boundaries_clear() {
     // This test documents the architectural boundary
-    use artifact::{ApplicationArtifact, ArtifactSDK};
+    use artifact::{ArtifactSDK, ApplicationArtifact};
 
     // Artifact Engine does:
     let recipe = artifact::RecipeSpec::wasm();
     let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = artifact_recipe
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
     let (artifact, evidence) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
         .expect("execution should succeed");
 
     // Application Artifact interprets:
-    let _app = ApplicationArtifact::from_wasm_artifact(
-        artifact.as_artifact().clone(),
-        evidence.used_capabilities(),
-    )
-    .expect("should interpret as application");
+    let _app = ApplicationArtifact::from_wasm_artifact(artifact.as_artifact().clone(), evidence.used_capabilities())
+        .expect("should interpret as application");
 
     // Application Artifact does NOT:
     // - execute the WASM
@@ -2876,9 +2648,7 @@ fn application_artifact_boundaries_clear() {
 fn composition_single_artifact_preserves_identity() {
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -2902,9 +2672,7 @@ fn composition_single_artifact_preserves_identity() {
 fn composition_produces_ordinary_artifact() {
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -2918,27 +2686,16 @@ fn composition_produces_ordinary_artifact() {
         .expect("composition should succeed");
 
     // Result is an ordinary Artifact
-    assert!(
-        !composed.identity.is_empty(),
-        "composed artifact has identity"
-    );
-    assert!(
-        !composed.entries.is_empty(),
-        "composed artifact has entries"
-    );
-    assert!(
-        !composed.capabilities.is_empty(),
-        "composed artifact has capabilities"
-    );
+    assert!(!composed.identity.is_empty(), "composed artifact has identity");
+    assert!(!composed.entries.is_empty(), "composed artifact has entries");
+    assert!(!composed.capabilities.is_empty(), "composed artifact has capabilities");
 }
 
 #[test]
 fn composition_identity_is_deterministic() {
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -2956,19 +2713,14 @@ fn composition_identity_is_deterministic() {
         .compose(artifact::CompositionOptions::default())
         .expect("composition should succeed");
 
-    assert_eq!(
-        composed1.identity, composed2.identity,
-        "composition is deterministic"
-    );
+    assert_eq!(composed1.identity, composed2.identity, "composition is deterministic");
 }
 
 #[test]
 fn composition_preserves_capabilities() {
     let recipe = RecipeSpec::wasm();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, evidence) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3002,9 +2754,7 @@ fn composition_no_second_execution_engine() {
 
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3036,9 +2786,7 @@ fn composition_no_second_execution_engine() {
 fn phase9_identity_test1_semantic_declaration_is_expressible() {
     let recipe = RecipeSpec::wasm();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3058,9 +2806,7 @@ fn phase9_identity_test1_semantic_declaration_is_expressible() {
 fn phase9_identity_test2_artifact_identity_unchanged_by_declaration() {
     let recipe = RecipeSpec::wasm();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3069,12 +2815,8 @@ fn phase9_identity_test2_artifact_identity_unchanged_by_declaration() {
     let base_artifact = artifact.as_artifact().clone();
     let identity_before = base_artifact.identity.clone();
 
-    let with_app = base_artifact
-        .clone()
-        .with_semantic_declaration("wasm_application");
-    let with_lib = base_artifact
-        .clone()
-        .with_semantic_declaration("wasm_library");
+    let with_app = base_artifact.clone().with_semantic_declaration("wasm_application");
+    let with_lib = base_artifact.clone().with_semantic_declaration("wasm_library");
 
     assert_eq!(
         with_app.identity, with_lib.identity,
@@ -3087,9 +2829,7 @@ fn phase9_identity_test2_artifact_identity_unchanged_by_declaration() {
 fn phase9_identity_test3_pipeline_identity_remains_distinct() {
     let recipe = RecipeSpec::wasm();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let inspect_before = pipeline.inspect().expect("inspect should succeed");
     let pipeline_id = inspect_before.pipeline_identity.clone();
@@ -3099,10 +2839,7 @@ fn phase9_identity_test3_pipeline_identity_remains_distinct() {
         .expect("execution should succeed");
 
     let inspect_after = pipeline.inspect().expect("inspect should succeed");
-    assert_eq!(
-        inspect_after.pipeline_identity, pipeline_id,
-        "pipeline identity stable"
-    );
+    assert_eq!(inspect_after.pipeline_identity, pipeline_id, "pipeline identity stable");
 
     let mut wasm_artifact = artifact.as_artifact().clone();
     wasm_artifact = wasm_artifact.with_semantic_declaration("wasm_application");
@@ -3116,9 +2853,7 @@ fn phase9_identity_test3_pipeline_identity_remains_distinct() {
 fn phase9_identity_test4_provenance_distinct_from_semantic_meaning() {
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3130,19 +2865,14 @@ fn phase9_identity_test4_provenance_distinct_from_semantic_meaning() {
     assert_eq!(artifact.semantic_type(), None);
 
     let with_decl = artifact.clone().with_semantic_declaration("some_type");
-    assert_eq!(
-        artifact.provenance, with_decl.provenance,
-        "provenance unchanged by declaration"
-    );
+    assert_eq!(artifact.provenance, with_decl.provenance, "provenance unchanged by declaration");
 }
 
 #[test]
 fn phase9_identity_test5_artifact_can_exist_without_semantic_declaration() {
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3159,9 +2889,7 @@ fn phase9_identity_test5_artifact_can_exist_without_semantic_declaration() {
 fn phase9_interpretation_test6_consumer_queries_declaration_without_inference() {
     let recipe = RecipeSpec::wasm();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3180,9 +2908,7 @@ fn phase9_interpretation_test6_consumer_queries_declaration_without_inference() 
 fn phase9_interpretation_test7_interpretation_does_not_invent_semantic_information() {
     let recipe = RecipeSpec::wasm();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3205,9 +2931,7 @@ fn phase9_interpretation_test7_interpretation_does_not_invent_semantic_informati
 fn phase9_interpretation_test8_invalid_declaration_handled_explicitly() {
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3224,9 +2948,7 @@ fn phase9_interpretation_test8_invalid_declaration_handled_explicitly() {
 fn phase9_transformation_test9_transforming_artifact_loses_declaration() {
     let recipe = RecipeSpec::wasm();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3248,9 +2970,7 @@ fn phase9_transformation_test9_transforming_artifact_loses_declaration() {
                 "semantic declaration should not carry through transform"
             );
 
-            let with_new_decl = result
-                .artifact
-                .with_semantic_declaration("wasm_application");
+            let with_new_decl = result.artifact.with_semantic_declaration("wasm_application");
             assert_eq!(with_new_decl.semantic_type(), Some("wasm_application"));
         }
         Err(_) => {
@@ -3263,9 +2983,7 @@ fn phase9_transformation_test9_transforming_artifact_loses_declaration() {
 fn phase9_transformation_test10_composing_artifacts_loses_individual_declarations() {
     let recipe = RecipeSpec::wasm();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3293,9 +3011,7 @@ fn phase9_transformation_test10_composing_artifacts_loses_individual_declaration
 fn phase9_materialization_test11_semantic_declaration_survives_serialization() {
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3304,9 +3020,7 @@ fn phase9_materialization_test11_semantic_declaration_survives_serialization() {
     let mut a = artifact.as_artifact().clone();
     a = a.with_semantic_declaration("example_package");
 
-    let bytes = a
-        .to_canonical_bytes()
-        .expect("serialization should succeed");
+    let bytes = a.to_canonical_bytes().expect("serialization should succeed");
     assert!(!bytes.is_empty());
 }
 
@@ -3314,9 +3028,7 @@ fn phase9_materialization_test11_semantic_declaration_survives_serialization() {
 fn phase9_materialization_test12_serialization_includes_declaration() {
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3325,9 +3037,7 @@ fn phase9_materialization_test12_serialization_includes_declaration() {
     let mut a = artifact.as_artifact().clone();
     a = a.with_semantic_declaration("example_package");
 
-    let bytes = a
-        .to_canonical_bytes()
-        .expect("serialization should succeed");
+    let bytes = a.to_canonical_bytes().expect("serialization should succeed");
     let json = String::from_utf8(bytes).expect("valid utf-8");
 
     assert!(
@@ -3340,9 +3050,7 @@ fn phase9_materialization_test12_serialization_includes_declaration() {
 fn phase9_architecture_test13_no_second_execution_engine() {
     let recipe = RecipeSpec::wasm();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, evidence) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3364,9 +3072,7 @@ fn phase9_architecture_test13_no_second_execution_engine() {
 fn phase9_architecture_test14_no_second_identity_system() {
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3383,9 +3089,7 @@ fn phase9_architecture_test14_no_second_identity_system() {
 fn phase9_architecture_test15_no_hidden_state() {
     let recipe = RecipeSpec::wasm();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3402,9 +3106,7 @@ fn phase9_architecture_test15_no_hidden_state() {
 fn phase9_experiment_authority_declaration_vs_content() {
     let recipe = RecipeSpec::wasm();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3413,12 +3115,7 @@ fn phase9_experiment_authority_declaration_vs_content() {
     let mut wasm_artifact = artifact.as_artifact().clone();
 
     // Artifact has .wasm files
-    assert!(
-        wasm_artifact
-            .entries
-            .iter()
-            .any(|e| e.path.ends_with(".wasm"))
-    );
+    assert!(wasm_artifact.entries.iter().any(|e| e.path.ends_with(".wasm")));
 
     // But we declare it differently
     wasm_artifact = wasm_artifact.with_semantic_declaration("wasm_library");
@@ -3431,9 +3128,7 @@ fn phase9_experiment_authority_declaration_vs_content() {
 fn phase9_experiment_same_content_different_meanings() {
     let recipe = RecipeSpec::wasm();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3469,9 +3164,7 @@ fn phase9_completion_exp1_declaration_in_json_serialization() {
     // Sub-test 1A: Declaration is in canonical JSON
     let recipe = RecipeSpec::wasm();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3480,9 +3173,7 @@ fn phase9_completion_exp1_declaration_in_json_serialization() {
     let mut artifact = artifact.as_artifact().clone();
     artifact = artifact.with_semantic_declaration("wasm_application");
 
-    let canonical_bytes = artifact
-        .to_canonical_bytes()
-        .expect("serialization succeeds");
+    let canonical_bytes = artifact.to_canonical_bytes().expect("serialization succeeds");
     let canonical_json = String::from_utf8(canonical_bytes).expect("valid utf-8");
 
     // Finding: Declaration IS in canonical JSON serialization
@@ -3497,9 +3188,7 @@ fn phase9_completion_exp1_materialization_round_trip_zip() {
     // Sub-test 1B: ZIP round-trip (most important finding)
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3536,9 +3225,7 @@ fn phase9_completion_exp1_wasm_materialization_round_trip() {
     // Sub-test 1C: WASM artifact materialization
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3580,9 +3267,7 @@ fn phase9_completion_exp2a_prefix_transform_semantics() {
 
     let recipe = RecipeSpec::wasm();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3626,9 +3311,7 @@ fn phase9_completion_exp2b_redaction_transform_semantics() {
 
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3675,9 +3358,7 @@ fn phase9_completion_exp2_transformation_finding() {
 
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3717,9 +3398,7 @@ fn phase9_completion_exp3_declaration_mutability() {
 
     let recipe = RecipeSpec::wasm();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3745,16 +3424,11 @@ fn phase9_completion_exp3_declaration_mutability() {
     );
 
     // FINDING 3B: Declaration in artifact2 changed
-    assert_eq!(
-        decl_2,
-        Some("wasm_library".to_string()),
-        "artifact2 has new declaration"
-    );
+    assert_eq!(decl_2, Some("wasm_library".to_string()), "artifact2 has new declaration");
 
     // FINDING 3C: Declaration in artifact1 unchanged
     assert_eq!(
-        artifact1.semantic_declaration,
-        Some("wasm_application".to_string()),
+        artifact1.semantic_declaration, Some("wasm_application".to_string()),
         "artifact1 still has original declaration (immutable)"
     );
 
@@ -3778,9 +3452,7 @@ fn phase9_completion_exp4_three_consumer_test() {
 
     let recipe = RecipeSpec::wasm();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3803,10 +3475,7 @@ fn phase9_completion_exp4_three_consumer_test() {
     // Consumer B: Requires verification before accepting
     let consumer_b_result = {
         // Consumer B wants to verify: "Does this actually have .wasm files?"
-        let has_wasm = shared_artifact
-            .entries
-            .iter()
-            .any(|e| e.path.ends_with(".wasm"));
+        let has_wasm = shared_artifact.entries.iter().any(|e| e.path.ends_with(".wasm"));
         if has_wasm && shared_artifact.semantic_type() == Some("wasm_application") {
             "ACCEPTED: Verified .wasm present, matches declaration"
         } else if has_wasm {
@@ -3874,9 +3543,7 @@ fn phase9_completion_exp4_claim_vs_attestation() {
 
     let recipe = RecipeSpec::wasm();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -3909,10 +3576,7 @@ fn phase9_completion_exp4_claim_vs_attestation() {
          Question: Is this sufficient or must Model 2 or 3 be adopted?"
     );
 
-    assert!(
-        artifact.semantic_type().is_some(),
-        "Declaration/claim is present"
-    );
+    assert!(artifact.semantic_type().is_some(), "Declaration/claim is present");
 }
 
 #[test]
@@ -3921,9 +3585,7 @@ fn phase9_completion_exp4_declaration_can_be_false() {
 
     let recipe = RecipeSpec::wasm();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)

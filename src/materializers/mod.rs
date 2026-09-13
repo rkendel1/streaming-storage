@@ -1,5 +1,5 @@
-mod tar;
 mod zip;
+mod tar;
 
-pub use tar::TarMaterializer;
 pub use zip::{ZipMaterialization, ZipMaterializer};
+pub use tar::TarMaterializer;

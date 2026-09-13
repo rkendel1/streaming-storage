@@ -1,4 +1,6 @@
-use artifact::{AllowAllPolicy, ArtifactSDK, RecipeSpec};
+use artifact::{
+    ArtifactSDK, AllowAllPolicy, RecipeSpec,
+};
 use std::env;
 use std::path::PathBuf;
 
@@ -129,10 +131,7 @@ fn handle_build(args: &[String]) {
     };
 
     if !json_output {
-        println!(
-            "\nPipeline: {}",
-            &inspection.pipeline_identity[..16.min(inspection.pipeline_identity.len())]
-        );
+        println!("\nPipeline: {}", &inspection.pipeline_identity[..16.min(inspection.pipeline_identity.len())]);
         println!("Materializer: {}", inspection.materializer);
         println!("\nStages:");
         for stage in &inspection.stages {
@@ -160,10 +159,7 @@ fn handle_build(args: &[String]) {
                 );
             } else {
                 println!("✓ Build succeeded");
-                println!(
-                    "  Artifact: {}",
-                    &artifact.identity()[..16.min(artifact.identity().len())]
-                );
+                println!("  Artifact: {}", &artifact.identity()[..16.min(artifact.identity().len())]);
                 println!("  Entries: {}", artifact.entries_count());
 
                 if evidence.is_successful() {

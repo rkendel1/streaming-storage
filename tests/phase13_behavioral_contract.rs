@@ -25,7 +25,7 @@ use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExternalArtifact {
-    pub identity: String,   // Immutable hash
+    pub identity: String,  // Immutable hash
     pub provenance: String, // Where it came from
 }
 
@@ -262,17 +262,13 @@ impl ExternalFactsModel for UnifiedRecord {
     fn add_revocation(&mut self, revocation: Revocation) -> bool {
         // Revocation is separate from attestation; doesn't mutate attestation
         // Attestation should still be gettable after revocation added
-        self.revocations
-            .insert(revocation.attestation_id.clone(), revocation);
+        self.revocations.insert(revocation.attestation_id.clone(), revocation);
         true
     }
 
     fn get_attestation_after_revocation(&self, attestation_id: &str) -> Option<Attestation> {
         // Attestation should be unchanged even though revocation exists
-        self.attestations
-            .iter()
-            .find(|a| a.id == attestation_id)
-            .cloned()
+        self.attestations.iter().find(|a| a.id == attestation_id).cloned()
     }
 
     fn get_revocation(&self, attestation_id: &str) -> Option<Revocation> {
@@ -296,8 +292,7 @@ impl ExternalFactsModel for UnifiedRecord {
 
     fn create_consumer_view(&self, policy: ConsumerPolicy) -> ConsumerView {
         // Different policy might select different attestation
-        let cached_attestation = self
-            .attestations
+        let cached_attestation = self.attestations
             .iter()
             .find(|att| policy.trusted_verifiers.contains(&att.verifier))
             .cloned();
@@ -355,8 +350,7 @@ impl ExternalFactsModel for ModularRecord {
     fn add_attestation(&mut self, attestation: Attestation) -> bool {
         // Each attestation is separate record
         assert_eq!(attestation.artifact_id, self.artifact.identity);
-        self.attestations
-            .insert(attestation.id.clone(), attestation);
+        self.attestations.insert(attestation.id.clone(), attestation);
         true
     }
 
@@ -370,8 +364,7 @@ impl ExternalFactsModel for ModularRecord {
 
     fn add_revocation(&mut self, revocation: Revocation) -> bool {
         // Revocation is separate record
-        self.revocations
-            .insert(revocation.attestation_id.clone(), revocation);
+        self.revocations.insert(revocation.attestation_id.clone(), revocation);
         true
     }
 
@@ -401,13 +394,9 @@ impl ExternalFactsModel for ModularRecord {
 
     fn create_consumer_view(&self, policy: ConsumerPolicy) -> ConsumerView {
         // Different policy selects different attestation from independent records
-        let cached_attestation = self
-            .attestations
+        let cached_attestation = self.attestations
             .values()
-            .find(|att| {
-                att.artifact_id == self.artifact.identity
-                    && policy.trusted_verifiers.contains(&att.verifier)
-            })
+            .find(|att| att.artifact_id == self.artifact.identity && policy.trusted_verifiers.contains(&att.verifier))
             .cloned();
 
         let decision = if cached_attestation.is_some() {
@@ -459,9 +448,7 @@ impl ExternalFactsModel for ContextualRecord {
     fn add_claim(&mut self, claim: Claim) -> bool {
         // Claim in registry, independent of identity
         assert_eq!(claim.artifact_id, self.artifact.identity);
-        self.registry
-            .claims
-            .insert(self.artifact.identity.clone(), claim);
+        self.registry.claims.insert(self.artifact.identity.clone(), claim);
         true
     }
 
@@ -477,8 +464,7 @@ impl ExternalFactsModel for ContextualRecord {
     }
 
     fn get_attestations(&self) -> Vec<Attestation> {
-        self.registry
-            .attestations
+        self.registry.attestations
             .iter()
             .filter(|a| a.artifact_id == self.artifact.identity)
             .cloned()
@@ -486,28 +472,18 @@ impl ExternalFactsModel for ContextualRecord {
     }
 
     fn get_attestation(&self, id: &str) -> Option<Attestation> {
-        self.registry
-            .attestations
-            .iter()
-            .find(|a| a.id == id)
-            .cloned()
+        self.registry.attestations.iter().find(|a| a.id == id).cloned()
     }
 
     fn add_revocation(&mut self, revocation: Revocation) -> bool {
         // Revocation in registry
-        self.registry
-            .revocations
-            .insert(revocation.attestation_id.clone(), revocation);
+        self.registry.revocations.insert(revocation.attestation_id.clone(), revocation);
         true
     }
 
     fn get_attestation_after_revocation(&self, attestation_id: &str) -> Option<Attestation> {
         // Attestation unchanged in registry despite revocation
-        self.registry
-            .attestations
-            .iter()
-            .find(|a| a.id == attestation_id)
-            .cloned()
+        self.registry.attestations.iter().find(|a| a.id == attestation_id).cloned()
     }
 
     fn get_revocation(&self, attestation_id: &str) -> Option<Revocation> {
@@ -531,14 +507,9 @@ impl ExternalFactsModel for ContextualRecord {
 
     fn create_consumer_view(&self, policy: ConsumerPolicy) -> ConsumerView {
         // Different contexts select different attestations from registry
-        let cached_attestation = self
-            .registry
-            .attestations
+        let cached_attestation = self.registry.attestations
             .iter()
-            .find(|att| {
-                att.artifact_id == self.artifact.identity
-                    && policy.trusted_verifiers.contains(&att.verifier)
-            })
+            .find(|att| att.artifact_id == self.artifact.identity && policy.trusted_verifiers.contains(&att.verifier))
             .cloned();
 
         let decision = if cached_attestation.is_some() {
@@ -568,32 +539,16 @@ fn phase13_test_unified_artifact_identity_immutable() {
     let identity_before = model.artifact_identity();
 
     model.add_claim(ctx.claim_1.clone());
-    assert_eq!(
-        model.artifact_identity(),
-        identity_before,
-        "Identity unchanged after claim"
-    );
+    assert_eq!(model.artifact_identity(), identity_before, "Identity unchanged after claim");
 
     model.add_attestation(ctx.attestation_1.clone());
-    assert_eq!(
-        model.artifact_identity(),
-        identity_before,
-        "Identity unchanged after attestation"
-    );
+    assert_eq!(model.artifact_identity(), identity_before, "Identity unchanged after attestation");
 
     model.add_evidence(ctx.evidence_1.clone());
-    assert_eq!(
-        model.artifact_identity(),
-        identity_before,
-        "Identity unchanged after evidence"
-    );
+    assert_eq!(model.artifact_identity(), identity_before, "Identity unchanged after evidence");
 
     model.add_revocation(ctx.revocation_1.clone());
-    assert_eq!(
-        model.artifact_identity(),
-        identity_before,
-        "Identity unchanged after revocation"
-    );
+    assert_eq!(model.artifact_identity(), identity_before, "Identity unchanged after revocation");
 }
 
 #[test]
@@ -651,14 +606,8 @@ fn phase13_test_unified_attestation_coexistence() {
     assert!(attestations.iter().any(|a| a.id == "att_2"));
 
     // Both still retrievable
-    assert_eq!(
-        model.get_attestation("att_1").unwrap().verifier,
-        "verifier_a"
-    );
-    assert_eq!(
-        model.get_attestation("att_2").unwrap().verifier,
-        "verifier_b"
-    );
+    assert_eq!(model.get_attestation("att_1").unwrap().verifier, "verifier_a");
+    assert_eq!(model.get_attestation("att_2").unwrap().verifier, "verifier_b");
 }
 
 #[test]
@@ -671,11 +620,7 @@ fn phase13_test_modular_attestation_coexistence() {
 
     model.add_attestation(ctx.attestation_2.clone());
     let attestations = model.get_attestations();
-    assert_eq!(
-        attestations.len(),
-        2,
-        "Both attestations coexist in separate records"
-    );
+    assert_eq!(attestations.len(), 2, "Both attestations coexist in separate records");
     assert!(attestations.iter().any(|a| a.id == "att_1"));
     assert!(attestations.iter().any(|a| a.id == "att_2"));
 }
@@ -690,11 +635,7 @@ fn phase13_test_contextual_attestation_coexistence() {
 
     model.add_attestation(ctx.attestation_2.clone());
     let attestations = model.get_attestations();
-    assert_eq!(
-        attestations.len(),
-        2,
-        "Registry maintains both attestations"
-    );
+    assert_eq!(attestations.len(), 2, "Registry maintains both attestations");
 }
 
 #[test]
@@ -756,10 +697,7 @@ fn phase13_test_unified_revocation_separate_state() {
 
     // Attestation should be unchanged
     let attestation_after = model.get_attestation_after_revocation("att_1").unwrap();
-    assert_eq!(
-        attestation_before, attestation_after,
-        "Attestation unchanged after revocation"
-    );
+    assert_eq!(attestation_before, attestation_after, "Attestation unchanged after revocation");
     assert_eq!(attestation_after.status, AttestationStatus::Verified);
 
     // Revocation should be separate
@@ -778,10 +716,7 @@ fn phase13_test_modular_revocation_separate_state() {
     model.add_revocation(ctx.revocation_1.clone());
 
     let attestation_after = model.get_attestation_after_revocation("att_1").unwrap();
-    assert_eq!(
-        attestation_before, attestation_after,
-        "Separate records don't mutate"
-    );
+    assert_eq!(attestation_before, attestation_after, "Separate records don't mutate");
 
     let revocation = model.get_revocation("att_1").unwrap();
     assert_eq!(revocation.reason, "key compromised");
@@ -798,10 +733,7 @@ fn phase13_test_contextual_revocation_separate_state() {
     model.add_revocation(ctx.revocation_1.clone());
 
     let attestation_after = model.get_attestation_after_revocation("att_1").unwrap();
-    assert_eq!(
-        attestation_before, attestation_after,
-        "Registry maintains original"
-    );
+    assert_eq!(attestation_before, attestation_after, "Registry maintains original");
 }
 
 #[test]
@@ -818,11 +750,7 @@ fn phase13_test_unified_evidence_independence() {
 
     // Evidence independent of attestation
     model.add_revocation(ctx.revocation_1.clone());
-    assert_eq!(
-        model.get_evidence().unwrap().data,
-        "test result data",
-        "Evidence persists"
-    );
+    assert_eq!(model.get_evidence().unwrap().data, "test result data", "Evidence persists");
 }
 
 #[test]

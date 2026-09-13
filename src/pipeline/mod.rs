@@ -14,7 +14,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-pub use self::inspection::{InspectedStage, PipelineInspection};
+pub use self::inspection::{PipelineInspection, InspectedStage};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -375,13 +375,7 @@ impl PipelineSpec {
         &self,
         root: impl AsRef<Path>,
         policy: &dyn crate::authorization::CapabilityPolicy,
-    ) -> Result<
-        (
-            SourceBackedArtifact,
-            crate::authorization::ExecutionEvidence,
-        ),
-        ArtifactError,
-    > {
+    ) -> Result<(SourceBackedArtifact, crate::authorization::ExecutionEvidence), ArtifactError> {
         let pipeline_identity = self.identity()?;
         let mut requested_capabilities = self.required_capabilities();
 
@@ -518,11 +512,7 @@ impl PipelineSpec {
 
         for stage in &self.stages {
             stage_trace.push(stage.label().to_string());
-            current = PipelineExecutor::execute_stage(
-                &current.artifact,
-                current.resolver.clone(),
-                stage,
-            )?;
+            current = PipelineExecutor::execute_stage(&current.artifact, current.resolver.clone(), stage)?;
         }
 
         Ok(SourceBackedArtifact {
@@ -545,22 +535,14 @@ impl PipelineSpec {
             }
 
             match stage {
-                StageSpec::Select(_)
-                | StageSpec::Transform(_)
-                | StageSpec::Redact(_)
-                | StageSpec::Generate(_)
-                | StageSpec::Compile(_)
-                    if seen_manifest =>
-                {
+                StageSpec::Select(_) | StageSpec::Transform(_) | StageSpec::Redact(_)
+                | StageSpec::Generate(_) | StageSpec::Compile(_) if seen_manifest => {
                     return Err(ArtifactError::InvalidState(
                         "source and transformation stages must appear before manifest".to_string(),
                     ));
                 }
-                StageSpec::Select(_)
-                | StageSpec::Transform(_)
-                | StageSpec::Redact(_)
-                | StageSpec::Generate(_)
-                | StageSpec::Compile(_) => {}
+                StageSpec::Select(_) | StageSpec::Transform(_) | StageSpec::Redact(_)
+                | StageSpec::Generate(_) | StageSpec::Compile(_) => {}
                 StageSpec::Manifest if seen_manifest => {
                     return Err(ArtifactError::InvalidState(
                         "manifest stage may only appear once".to_string(),
@@ -907,10 +889,11 @@ impl MemoryContentResolver {
 
 impl ContentResolver for MemoryContentResolver {
     fn resolve(&self, path: &str) -> Result<Box<dyn Read>, ArtifactError> {
-        let bytes =
-            self.entries.get(path).cloned().ok_or_else(|| {
-                ArtifactError::Materialization(format!("missing content for {path}"))
-            })?;
+        let bytes = self
+            .entries
+            .get(path)
+            .cloned()
+            .ok_or_else(|| ArtifactError::Materialization(format!("missing content for {path}")))?;
         Ok(Box::new(std::io::Cursor::new(bytes)))
     }
 }
@@ -928,10 +911,11 @@ impl TransformedContentResolver {
 
 impl ContentResolver for TransformedContentResolver {
     fn resolve(&self, path: &str) -> Result<Box<dyn Read>, ArtifactError> {
-        let bytes =
-            self.entries.get(path).cloned().ok_or_else(|| {
-                ArtifactError::Materialization(format!("missing content for {path}"))
-            })?;
+        let bytes = self
+            .entries
+            .get(path)
+            .cloned()
+            .ok_or_else(|| ArtifactError::Materialization(format!("missing content for {path}")))?;
         Ok(Box::new(std::io::Cursor::new(bytes)))
     }
 }

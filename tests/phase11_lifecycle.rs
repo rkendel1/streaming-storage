@@ -16,7 +16,9 @@
 // Epistemology:
 // Observation → Constraint → Relationship → [Phase 12: Representation]
 
-use artifact::{AllowAllPolicy, ArtifactSDK, RecipeSpec};
+use artifact::{
+    RecipeSpec, ArtifactSDK, AllowAllPolicy,
+};
 use std::path::PathBuf;
 
 fn example_dir() -> PathBuf {
@@ -34,9 +36,7 @@ fn example_dir() -> PathBuf {
 fn phase11_exp1_transformation_preserves_identity() {
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact_wrapped, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -73,7 +73,8 @@ fn phase11_exp1_transformation_preserves_identity() {
          - Attestation ──attests──> Artifact (by content hash)\n\
          - Claim change ──does NOT invalidate──> Attestation\n\
          Edge Found: attestation-identity binding is immutable; claims are separate\n",
-        identity_base, identity_with_claim
+        identity_base,
+        identity_with_claim
     );
 
     assert_eq!(identity_base, identity_with_claim);
@@ -83,9 +84,7 @@ fn phase11_exp1_transformation_preserves_identity() {
 fn phase11_exp1_claim_does_not_survive_transform() {
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact_a, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -135,9 +134,7 @@ fn phase11_exp1_claim_does_not_survive_transform() {
 fn phase11_exp2_multiple_attestations_timeline() {
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -194,9 +191,7 @@ fn phase11_exp2_multiple_attestations_timeline() {
 fn phase11_exp3_claim_independence() {
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -262,9 +257,7 @@ fn phase11_exp3_claim_independence() {
 fn phase11_exp4_provenance_as_lineage() {
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -318,9 +311,7 @@ fn phase11_exp4_provenance_as_lineage() {
 fn phase11_exp5_evidence_independence() {
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -382,9 +373,7 @@ fn phase11_exp5_evidence_independence() {
 fn phase11_exp6_revocation_as_new_state() {
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -448,9 +437,7 @@ fn phase11_exp6_revocation_as_new_state() {
 fn phase11_exp7_policy_driven_decisions() {
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact
-        .compile()
-        .expect("compilation should succeed");
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)

@@ -1,6 +1,4 @@
-use crate::core::{
-    Artifact, ArtifactError, MaterializationResult, sha256_prefixed, validate_entry_layout,
-};
+use crate::core::{Artifact, ArtifactError, MaterializationResult, sha256_prefixed, validate_entry_layout};
 use crate::pipeline::ContentResolver;
 use sha2::{Digest, Sha256};
 use std::fs::File;

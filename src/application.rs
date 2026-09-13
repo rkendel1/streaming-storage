@@ -13,11 +13,7 @@ impl ApplicationManifest {
         artifact: &Artifact,
         declared_capabilities: Vec<Capability>,
     ) -> Result<ApplicationManifest, ArtifactError> {
-        if !artifact
-            .entries
-            .iter()
-            .any(|e| e.path == "application.wasm")
-        {
+        if !artifact.entries.iter().any(|e| e.path == "application.wasm") {
             return Err(ArtifactError::InvalidState(
                 "Not a WASM application artifact: no application.wasm entry".to_string(),
             ));
@@ -38,9 +34,8 @@ impl ApplicationManifest {
     }
 
     pub fn to_json(&self) -> Result<Vec<u8>, ArtifactError> {
-        serde_json::to_vec_pretty(self).map_err(|e| {
-            ArtifactError::Serialization(format!("Manifest serialization failed: {}", e))
-        })
+        serde_json::to_vec_pretty(self)
+            .map_err(|e| ArtifactError::Serialization(format!("Manifest serialization failed: {}", e)))
     }
 }
 
@@ -50,12 +45,8 @@ pub struct ApplicationArtifact {
 }
 
 impl ApplicationArtifact {
-    pub fn from_wasm_artifact(
-        artifact: Artifact,
-        declared_capabilities: Vec<Capability>,
-    ) -> Result<ApplicationArtifact, ArtifactError> {
-        let manifest =
-            ApplicationManifest::compute_from_wasm_artifact(&artifact, declared_capabilities)?;
+    pub fn from_wasm_artifact(artifact: Artifact, declared_capabilities: Vec<Capability>) -> Result<ApplicationArtifact, ArtifactError> {
+        let manifest = ApplicationManifest::compute_from_wasm_artifact(&artifact, declared_capabilities)?;
         Ok(ApplicationArtifact { artifact, manifest })
     }
 
