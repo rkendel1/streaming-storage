@@ -156,9 +156,10 @@ fn oci_materializes_real_artifact() {
 #[test]
 fn oci_representation_is_deterministic() {
     let prepared = prepare_artifact_fixture();
+    let recovered = recover(&prepared);
     let second = expect_oci(OciConsumer.materialize_to_oci_image(
-        recover(&prepared).artifact(),
-        &recover(&prepared),
+        recovered.artifact(),
+        &recovered,
         "bin/runtime-fixture",
     ));
 

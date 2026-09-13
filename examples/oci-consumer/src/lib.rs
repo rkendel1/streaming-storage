@@ -1,4 +1,6 @@
-use artifact::{core::sha256_prefixed, Artifact, ArtifactError, ContentResolver};
+use artifact::{
+    core::sha256_prefixed, normalize_relative_path, Artifact, ArtifactError, ContentResolver,
+};
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::Path;
@@ -42,10 +44,17 @@ impl OciConsumer {
 
         let staging = TempDir::new()?;
         stage_artifact_contents(artifact, resolver, staging.path())?;
-        write_dockerfile(staging.path(), executable_relative_path)?;
+        let executable_relative_path =
+            normalize_relative_path(executable_relative_path).map_err(materialization_error)?;
+        write_dockerfile(staging.path(), &executable_relative_path)?;
 
         let image_reference = format!(
-            "artifact-oci-consumer-proof:{}",
+            "artifact-oci-consumer-proof:{}-{}-{}",
+            artifact
+                .identity
+                .strip_prefix("sha256:")
+                .unwrap_or("artifact"),
+            std::process::id(),
             NEXT_IMAGE_ID.fetch_add(1, Ordering::Relaxed)
         );
 
@@ -148,7 +157,8 @@ fn stage_artifact_contents(
     root: &Path,
 ) -> io::Result<()> {
     for entry in &artifact.entries {
-        let path = root.join(&entry.path);
+        let relative_path = normalize_relative_path(&entry.path).map_err(materialization_error)?;
+        let path = root.join(relative_path);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -188,11 +198,14 @@ fn stage_artifact_contents(
 
 fn write_dockerfile(root: &Path, executable_relative_path: &str) -> io::Result<()> {
     let dockerfile = root.join("Dockerfile");
+    let entrypoint = serde_json::to_string(&vec![format!("/artifact/{executable_relative_path}")])
+        .map_err(|source| io::Error::other(source.to_string()))?;
     let mut file = File::create(dockerfile)?;
-    writeln!(
-        file,
-        "FROM alpine:3.22\nCOPY . /artifact\nWORKDIR /artifact\nENTRYPOINT [\"/bin/sh\", \"/artifact/{executable_relative_path}\"]"
-    )?;
+    writeln!(file, "FROM alpine:3.22")?;
+    writeln!(file, "COPY . /artifact")?;
+    writeln!(file, "WORKDIR /artifact")?;
+    writeln!(file, "RUN chmod 755 /artifact/{executable_relative_path}")?;
+    writeln!(file, "ENTRYPOINT {entrypoint}")?;
     file.sync_all()?;
     Ok(())
 }
