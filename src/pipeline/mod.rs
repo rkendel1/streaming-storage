@@ -1,3 +1,5 @@
+pub mod inspection;
+
 use crate::core::{
     Artifact, ArtifactEntry, ArtifactError, Capability, CreationMetadata, EntryType, Provenance,
     canonical_capabilities, normalize_relative_path, sha256_prefixed,
@@ -11,6 +13,8 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+pub use self::inspection::{PipelineInspection, InspectedStage};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -304,7 +308,17 @@ impl PipelineSpec {
         policy: &dyn crate::authorization::CapabilityPolicy,
     ) -> Result<(SourceBackedArtifact, crate::authorization::ExecutionEvidence), ArtifactError> {
         let pipeline_identity = self.identity()?;
-        let requested_capabilities = self.required_capabilities();
+        let mut requested_capabilities = self.required_capabilities();
+
+        match self.materializer {
+            MaterializerSpec::Zip => {
+                requested_capabilities.push(Capability::new("package.zip", "1"));
+            }
+            MaterializerSpec::Tar => {
+                requested_capabilities.push(Capability::new("package.tar", "1"));
+            }
+        }
+
         let policy_identity = policy.identity();
 
         let granted_capabilities = match policy.authorize(&requested_capabilities) {
@@ -338,14 +352,24 @@ impl PipelineSpec {
 
         match self.build_from_directory(root) {
             Ok(artifact) => {
-                let stage_trace: Vec<crate::authorization::ExecutedStage> = artifact
-                    .stage_trace()
-                    .iter()
-                    .map(|label| crate::authorization::ExecutedStage {
+                let mut stage_trace: Vec<crate::authorization::ExecutedStage> = Vec::new();
+                for (idx, label) in artifact.stage_trace().iter().enumerate() {
+                    let stage_identity = if idx == 0 {
+                        String::new()
+                    } else if idx > 0 && idx < self.stages.len() + 1 {
+                        self.stages
+                            .get(idx - 1)
+                            .and_then(|s| s.identity().ok())
+                            .unwrap_or_default()
+                    } else {
+                        String::new()
+                    };
+
+                    stage_trace.push(crate::authorization::ExecutedStage {
                         label: label.clone(),
-                        stage_identity: String::new(),
-                    })
-                    .collect();
+                        stage_identity,
+                    });
+                }
 
                 let evidence = crate::authorization::ExecutionEvidence::success(
                     pipeline_identity,

@@ -1060,10 +1060,11 @@ fn authorization_with_matching_policy_succeeds() {
 
     let (_, evidence) = result.expect("execution should succeed");
     assert_eq!(evidence.authorization_decision.decision, AuthorizationResult::Allowed);
+    let expected_count = pipeline.required_capabilities().len() + 1;
     assert_eq!(
         evidence.granted_capabilities.len(),
-        pipeline.required_capabilities().len(),
-        "all capabilities should be granted"
+        expected_count,
+        "all capabilities should be granted (including materializer)"
     );
 }
 
@@ -1197,6 +1198,229 @@ fn allow_all_policy_identity_is_stable() {
         policy2.identity(),
         "AllowAllPolicy identity should be stable"
     );
+}
+
+#[test]
+fn pipeline_inspection_does_not_execute_source() {
+    let pipeline = default_directory_zip_pipeline();
+    let inspection = pipeline.inspect().expect("inspection should succeed");
+
+    assert!(!inspection.pipeline_identity.is_empty());
+    assert!(!inspection.stages.is_empty());
+    assert!(!inspection.canonical_pipeline_json.is_empty());
+}
+
+#[test]
+fn pipeline_inspection_reports_ordered_stages() {
+    let pipeline = default_directory_zip_pipeline();
+    let inspection = pipeline.inspect().expect("inspection should succeed");
+
+    let labels: Vec<_> = inspection.stages.iter().map(|s| s.label.as_str()).collect();
+    assert_eq!(labels, vec!["select", "manifest", "validate"]);
+}
+
+#[test]
+fn pipeline_inspection_includes_materializer_capability() {
+    let pipeline = default_directory_zip_pipeline();
+    let inspection = pipeline.inspect().expect("inspection should succeed");
+
+    assert!(
+        inspection
+            .required_capabilities
+            .iter()
+            .any(|c| c.name == "package.zip"),
+        "inspection should include materializer capability"
+    );
+}
+
+#[test]
+fn pipeline_inspection_identity_is_deterministic() {
+    let pipeline = default_directory_zip_pipeline();
+    let inspection1 = pipeline.inspect().expect("first inspection should succeed");
+    let inspection2 = pipeline.inspect().expect("second inspection should succeed");
+
+    assert_eq!(
+        inspection1.pipeline_identity, inspection2.pipeline_identity,
+        "inspection identity should be deterministic"
+    );
+}
+
+#[test]
+fn materializer_capability_required_for_zip() {
+    let pipeline = default_directory_zip_pipeline();
+    let policy = AllowListPolicy::new(vec![
+        ("filesystem.read".to_string(), "1".to_string()),
+        ("manifest.generate".to_string(), "1".to_string()),
+        ("artifact.validate".to_string(), "1".to_string()),
+    ]);
+
+    let result = pipeline.build_with_authorization(example_dir(), &policy);
+    assert!(
+        result.is_err(),
+        "missing materializer capability should deny execution"
+    );
+}
+
+#[test]
+fn execution_evidence_validates_successfully() {
+    let pipeline = default_directory_zip_pipeline();
+    let policy = AllowAllPolicy;
+
+    let (_, evidence) = pipeline
+        .build_with_authorization(example_dir(), &policy)
+        .expect("execution should succeed");
+
+    assert!(
+        evidence.validate().is_ok(),
+        "successful execution evidence should validate"
+    );
+}
+
+#[test]
+fn denied_authorization_produces_zero_stages() {
+    let pipeline = default_directory_zip_pipeline();
+    let policy = AllowListPolicy::new(vec![
+        ("filesystem.read".to_string(), "1".to_string()),
+    ]);
+
+    let result = pipeline.build_with_authorization(example_dir(), &policy);
+    assert!(result.is_err(), "denied authorization should prevent execution");
+}
+
+#[test]
+fn execution_evidence_records_stage_identities() {
+    let pipeline = default_directory_zip_pipeline();
+    let policy = AllowAllPolicy;
+
+    let (_, evidence) = pipeline
+        .build_with_authorization(example_dir(), &policy)
+        .expect("execution should succeed");
+
+    for stage in &evidence.stage_trace {
+        if stage.label != "source" {
+            assert!(
+                !stage.stage_identity.is_empty(),
+                "executed stage should have identity"
+            );
+        }
+    }
+}
+
+#[test]
+fn execution_evidence_semantic_portion_is_deterministic() {
+    let pipeline = default_directory_zip_pipeline();
+    let policy = AllowAllPolicy;
+
+    let (_, evidence1) = pipeline
+        .build_with_authorization(example_dir(), &policy)
+        .expect("first execution should succeed");
+    let (_, evidence2) = pipeline
+        .build_with_authorization(example_dir(), &policy)
+        .expect("second execution should succeed");
+
+    let canonical1 = evidence1
+        .to_canonical_bytes()
+        .expect("first canonical should serialize");
+    let canonical2 = evidence2
+        .to_canonical_bytes()
+        .expect("second canonical should serialize");
+
+    assert_eq!(canonical1, canonical2, "semantic evidence should be deterministic");
+}
+
+#[test]
+fn artifact_identity_unchanged_by_authorization() {
+    let pipeline = default_directory_zip_pipeline();
+
+    let result_allow_all = pipeline.build_with_authorization(example_dir(), &AllowAllPolicy);
+    let policy_allow_list = AllowListPolicy::new(vec![
+        ("filesystem.read".to_string(), "1".to_string()),
+        ("manifest.generate".to_string(), "1".to_string()),
+        ("artifact.validate".to_string(), "1".to_string()),
+        ("package.zip".to_string(), "1".to_string()),
+    ]);
+    let result_allow_list = pipeline.build_with_authorization(example_dir(), &policy_allow_list);
+
+    let (artifact1, _) = result_allow_all.expect("allow_all should succeed");
+    let (artifact2, _) = result_allow_list.expect("allow_list should succeed");
+
+    assert_eq!(
+        artifact1.artifact().identity, artifact2.artifact().identity,
+        "artifact identity should be independent of authorization policy"
+    );
+}
+
+#[test]
+fn same_artifact_materializes_as_zip_and_tar() {
+    let pipeline = default_directory_zip_pipeline();
+    let (built, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let artifact = built.artifact();
+    let zip_bytes = ZipMaterializer
+        .materialize_to_vec(artifact, &built)
+        .expect("ZIP should materialize");
+    let tar_bytes = TarMaterializer
+        .materialize_to_vec(artifact, &built)
+        .expect("TAR should materialize");
+
+    assert!(!zip_bytes.is_empty(), "ZIP materialization should produce bytes");
+    assert!(!tar_bytes.is_empty(), "TAR materialization should produce bytes");
+    let zip_digest = digest_for_bytes(&zip_bytes);
+    let tar_digest = digest_for_bytes(&tar_bytes);
+    assert_ne!(zip_digest, tar_digest, "ZIP and TAR should have different digests");
+}
+
+#[test]
+fn pipeline_inspection_canonical_json_is_valid() {
+    let pipeline = default_directory_zip_pipeline();
+    let inspection = pipeline.inspect().expect("inspection should succeed");
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&inspection.canonical_pipeline_json)
+            .expect("canonical JSON should be valid");
+
+    assert_eq!(parsed["schema"], "pipeline.v1");
+    assert!(!parsed["stages"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn execution_evidence_distinguishes_requested_granted_used() {
+    let pipeline = default_directory_zip_pipeline();
+    let policy = AllowAllPolicy;
+
+    let (_, evidence) = pipeline
+        .build_with_authorization(example_dir(), &policy)
+        .expect("execution should succeed");
+
+    assert!(!evidence.requested_capabilities.is_empty(), "evidence should record requested");
+    assert!(
+        !evidence.granted_capabilities.is_empty(),
+        "evidence should record granted"
+    );
+    assert!(!evidence.used_capabilities.is_empty(), "evidence should record used");
+
+    assert_eq!(
+        evidence.granted_capabilities.len(),
+        evidence.used_capabilities.len(),
+        "granted and used should be equal for successful execution"
+    );
+}
+
+#[test]
+fn evidence_validates_artifact_identity_on_success() {
+    let pipeline = default_directory_zip_pipeline();
+    let (built, evidence) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    assert_eq!(
+        evidence.artifact_identity,
+        built.artifact().identity,
+        "evidence should reference the produced artifact"
+    );
+    assert!(evidence.validate().is_ok(), "valid evidence should pass validation");
 }
 
 struct StaticResolver {

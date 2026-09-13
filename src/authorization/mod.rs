@@ -239,6 +239,56 @@ impl ExecutionEvidence {
         }
     }
 
+    pub fn validate(&self) -> Result<(), String> {
+        if self.authorization_decision.decision != AuthorizationResult::Allowed
+            && !self.stage_trace.is_empty()
+            && self.stage_trace[0].label != "source"
+        {
+            return Err("denied authorization must not execute stages".to_string());
+        }
+
+        if self.authorization_decision.decision == AuthorizationResult::Allowed {
+            if self.artifact_identity.is_empty() && matches!(self.execution_result, ExecutionResult::Success) {
+                return Err("successful execution must reference an artifact".to_string());
+            }
+
+            let granted_set: BTreeSet<_> = self
+                .granted_capabilities
+                .iter()
+                .map(|c| (c.name.clone(), c.version.clone()))
+                .collect();
+
+            for cap in &self.used_capabilities {
+                if !granted_set.contains(&(cap.name.clone(), cap.version.clone())) {
+                    return Err(format!(
+                        "used capability not in granted set: {}.{}",
+                        cap.name, cap.version
+                    ));
+                }
+            }
+        }
+
+        match &self.execution_result {
+            ExecutionResult::Success => {
+                if self.authorization_decision.decision != AuthorizationResult::Allowed {
+                    return Err("denied authorization cannot result in success".to_string());
+                }
+                if self.artifact_identity.is_empty() {
+                    return Err("successful execution must have artifact identity".to_string());
+                }
+            }
+            ExecutionResult::Failed(_) => {
+                if self.authorization_decision.decision == AuthorizationResult::Denied
+                    && self.stage_trace.len() > 1
+                {
+                    return Err("denied authorization must not execute past source".to_string());
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn to_canonical_bytes(&self) -> Result<Vec<u8>, ArtifactError> {
         let canonical = serde_json::json!({
             "schema": "execution_evidence.v1",
