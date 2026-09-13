@@ -1,3 +1,4 @@
+pub mod application;
 pub mod authorization;
 pub mod core;
 pub mod materializers;
@@ -8,6 +9,7 @@ pub mod transforms;
 #[cfg(feature = "wasm")]
 pub mod wasm;
 
+pub use crate::application::{ApplicationArtifact, ApplicationManifest};
 pub use crate::authorization::{
     AllowAllPolicy, AllowListPolicy, AuthorizationDecision, AuthorizationResult, CapabilityPolicy,
     ExecutedStage, ExecutionEvidence, ExecutionResult,

@@ -2416,3 +2416,227 @@ fn typescript_sdk_cli_pattern_compatible() {
     // Both CLI and TypeScript SDK follow identical pattern, call same SDK methods
 }
 
+// ============================================================================
+// Phase 7 Foundation Tests: Application Artifact Model
+// ============================================================================
+
+#[test]
+fn application_artifact_wraps_wasm_artifact() {
+    use artifact::{ArtifactSDK, ApplicationArtifact};
+
+    let recipe = artifact::RecipeSpec::wasm();
+    let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
+
+    let (built_artifact, evidence) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let app_artifact = ApplicationArtifact::from_wasm_artifact(
+        built_artifact.as_artifact().clone(),
+        evidence.used_capabilities(),
+    )
+    .expect("should create application artifact");
+
+    assert_eq!(app_artifact.identity(), built_artifact.identity());
+}
+
+#[test]
+fn application_artifact_identity_is_artifact_identity() {
+    use artifact::{ArtifactSDK, ApplicationArtifact};
+
+    let recipe = artifact::RecipeSpec::wasm();
+    let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
+
+    let (built_artifact1, evidence1) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let (built_artifact2, evidence2) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let app1 =
+        ApplicationArtifact::from_wasm_artifact(built_artifact1.as_artifact().clone(), evidence1.used_capabilities())
+            .expect("should create app artifact");
+    let app2 =
+        ApplicationArtifact::from_wasm_artifact(built_artifact2.as_artifact().clone(), evidence2.used_capabilities())
+            .expect("should create app artifact");
+
+    assert_eq!(app1.identity(), app2.identity(), "same recipe produces same application identity");
+}
+
+#[test]
+fn application_manifest_is_deterministic() {
+    use artifact::{ArtifactSDK, ApplicationArtifact};
+
+    let recipe = artifact::RecipeSpec::wasm();
+    let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
+
+    let (built_artifact, evidence) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let app =
+        ApplicationArtifact::from_wasm_artifact(built_artifact.as_artifact().clone(), evidence.used_capabilities())
+            .expect("should create app artifact");
+
+    let manifest_json1 = app.manifest().to_json().expect("manifest should serialize");
+    let manifest_json2 = app.manifest().to_json().expect("manifest should serialize");
+
+    assert_eq!(manifest_json1, manifest_json2, "manifest should be deterministic");
+}
+
+#[test]
+fn application_manifest_contains_declared_capabilities() {
+    use artifact::{ArtifactSDK, ApplicationArtifact};
+
+    let recipe = artifact::RecipeSpec::wasm();
+    let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
+
+    let (built_artifact, evidence) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let capabilities = evidence.used_capabilities();
+    let app = ApplicationArtifact::from_wasm_artifact(built_artifact.as_artifact().clone(), capabilities.clone())
+        .expect("should create app artifact");
+
+    assert_eq!(
+        app.declared_capabilities().len(),
+        capabilities.len(),
+        "manifest should contain all declared capabilities"
+    );
+}
+
+#[test]
+fn application_manifest_has_entrypoint() {
+    use artifact::{ArtifactSDK, ApplicationArtifact};
+
+    let recipe = artifact::RecipeSpec::wasm();
+    let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
+
+    let (built_artifact, evidence) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let app = ApplicationArtifact::from_wasm_artifact(built_artifact.as_artifact().clone(), evidence.used_capabilities())
+        .expect("should create app artifact");
+
+    assert_eq!(app.manifest().entrypoint, "application.wasm");
+}
+
+#[test]
+fn application_artifact_has_executable() {
+    use artifact::{ArtifactSDK, ApplicationArtifact};
+
+    let recipe = artifact::RecipeSpec::wasm();
+    let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
+
+    let (built_artifact, evidence) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let app = ApplicationArtifact::from_wasm_artifact(built_artifact.as_artifact().clone(), evidence.used_capabilities())
+        .expect("should create app artifact");
+
+    assert!(app.has_executable(), "should have application.wasm executable");
+}
+
+#[test]
+fn application_artifact_remains_thin_wrapper() {
+    use artifact::{ArtifactSDK, ApplicationArtifact};
+
+    let recipe = artifact::RecipeSpec::wasm();
+    let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
+
+    let (built_artifact, evidence) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let artifact_id = built_artifact.identity();
+    let app = ApplicationArtifact::from_wasm_artifact(built_artifact.as_artifact().clone(), evidence.used_capabilities())
+        .expect("should create app artifact");
+
+    // ApplicationArtifact should not have its own identity computation
+    // It only wraps and interprets existing artifact
+    assert_eq!(app.identity(), artifact_id, "application should use artifact identity, not compute separate one");
+}
+
+#[test]
+fn application_artifact_manifest_does_not_affect_identity() {
+    use artifact::{ArtifactSDK, ApplicationArtifact};
+
+    let recipe = artifact::RecipeSpec::wasm();
+    let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
+
+    let (built_artifact, evidence) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    // Create app with two different capability lists
+    let cap1 = vec![];
+    let cap2 = evidence.used_capabilities();
+
+    let app1 = ApplicationArtifact::from_wasm_artifact(built_artifact.as_artifact().clone(), cap1)
+        .expect("should create app artifact");
+    let app2 = ApplicationArtifact::from_wasm_artifact(built_artifact.as_artifact().clone(), cap2)
+        .expect("should create app artifact");
+
+    // Identity should remain same because artifact didn't change
+    assert_eq!(app1.identity(), app2.identity(), "manifest differences should not affect identity");
+}
+
+#[test]
+fn application_artifact_non_wasm_rejected() {
+    use artifact::{ArtifactSDK, ApplicationArtifact};
+
+    let recipe = artifact::RecipeSpec::directory_zip();
+    let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
+
+    let (built_artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let result = ApplicationArtifact::from_wasm_artifact(built_artifact.as_artifact().clone(), vec![]);
+
+    assert!(
+        result.is_err(),
+        "non-WASM artifact should not be interpretable as application"
+    );
+}
+
+#[test]
+fn application_artifact_boundaries_clear() {
+    // This test documents the architectural boundary
+    use artifact::{ArtifactSDK, ApplicationArtifact};
+
+    // Artifact Engine does:
+    let recipe = artifact::RecipeSpec::wasm();
+    let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
+    let (artifact, evidence) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    // Application Artifact interprets:
+    let _app = ApplicationArtifact::from_wasm_artifact(artifact.as_artifact().clone(), evidence.used_capabilities())
+        .expect("should interpret as application");
+
+    // Application Artifact does NOT:
+    // - execute the WASM
+    // - allocate resources
+    // - provision capabilities
+    // - manage lifecycle
+    // - create deployment packages
+    // It is purely an interpretation layer.
+}
+
