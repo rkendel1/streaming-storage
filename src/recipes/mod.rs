@@ -1,6 +1,6 @@
 use crate::core::{ArtifactError, Capability};
 use crate::pipeline::{
-    MaterializerSpec, PipelineSpec, SelectStageSpec, SourceSpec, StageSpec,
+    CompileStageSpec, MaterializerSpec, PipelineSpec, SelectStageSpec, SourceSpec, StageSpec,
 };
 use serde::Serialize;
 
@@ -141,6 +141,7 @@ impl RecipeSpec {
             source: self.source.clone(),
             stages: vec![
                 StageSpec::Select(select_stage),
+                StageSpec::Compile(CompileStageSpec::new("wasm")),
                 StageSpec::Manifest,
                 StageSpec::Validate,
             ],

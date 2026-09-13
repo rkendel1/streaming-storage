@@ -18,7 +18,7 @@ pub use crate::transforms::{
     ArtifactTransform, GenerateTransform, PrefixTransform, RedactTransform, TransformedArtifact,
 };
 pub use crate::pipeline::{
-    ContentResolver, EntryContentResolver, GenerateStageSpec, InspectedStage, MaterializerSpec,
+    CompileStageSpec, ContentResolver, EntryContentResolver, GenerateStageSpec, InspectedStage, MaterializerSpec,
     MemoryContentResolver, PipelineInspection, PipelineSpec, RedactStageSpec, SelectStageSpec,
     SourceBackedArtifact, SourceSpec, StageSpec, TransformedContentResolver, TransformStageSpec,
     default_directory_zip_pipeline,

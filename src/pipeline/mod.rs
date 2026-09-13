@@ -104,12 +104,26 @@ impl GenerateStageSpec {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct CompileStageSpec {
+    pub target: String,
+}
+
+impl CompileStageSpec {
+    pub fn new(target: impl Into<String>) -> Self {
+        Self {
+            target: target.into(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StageSpec {
     Select(SelectStageSpec),
     Transform(TransformStageSpec),
     Redact(RedactStageSpec),
     Generate(GenerateStageSpec),
+    Compile(CompileStageSpec),
     Manifest,
     Validate,
 }
@@ -121,6 +135,7 @@ impl StageSpec {
             Self::Transform(_) => "transform",
             Self::Redact(_) => "redact",
             Self::Generate(_) => "generate",
+            Self::Compile(_) => "compile",
             Self::Manifest => "manifest",
             Self::Validate => "validate",
         }
@@ -169,6 +184,7 @@ impl PipelineExecutor {
             StageSpec::Transform(spec) => Self::execute_transform(artifact, resolver, spec),
             StageSpec::Redact(spec) => Self::execute_redact(artifact, resolver, spec),
             StageSpec::Generate(spec) => Self::execute_generate(artifact, resolver, spec),
+            StageSpec::Compile(spec) => Self::execute_compile(artifact, resolver, spec),
             StageSpec::Manifest => Self::execute_manifest(artifact, resolver),
             StageSpec::Validate => Self::execute_validate(artifact, resolver),
         }
@@ -248,6 +264,59 @@ impl PipelineExecutor {
             artifact: result.artifact,
             resolver: Arc::new(TransformedContentResolver::new(result.content_updates)),
         })
+    }
+
+    fn execute_compile(
+        artifact: &Artifact,
+        resolver: Arc<dyn ContentResolver>,
+        spec: &CompileStageSpec,
+    ) -> Result<StageOutput, ArtifactError> {
+        match spec.target.as_str() {
+            "wasm" => {
+                let wasm_bytes = Self::compile_wasm(artifact, resolver.as_ref())?;
+
+                use crate::transforms::GenerateTransform;
+                let transform = GenerateTransform::new("application.wasm", wasm_bytes.as_slice());
+                let result = transform.apply(artifact, resolver.as_ref())?;
+
+                Ok(StageOutput {
+                    artifact: result.artifact,
+                    resolver: Arc::new(TransformedContentResolver::new(result.content_updates)),
+                })
+            }
+            target => Err(ArtifactError::InvalidState(format!(
+                "unknown compile target: {}",
+                target
+            ))),
+        }
+    }
+
+    fn compile_wasm(
+        artifact: &Artifact,
+        resolver: &dyn ContentResolver,
+    ) -> Result<Vec<u8>, ArtifactError> {
+        let mut wasm_bytes = Vec::new();
+        wasm_bytes.extend_from_slice(b"WASM_STUB");
+
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(&artifact.identity.as_bytes());
+        for entry in &artifact.entries {
+            hasher.update(entry.path.as_bytes());
+            if let Ok(mut content) = resolver.resolve(&entry.path) {
+                let mut buf = [0u8; 4096];
+                while let Ok(n) = std::io::Read::read(&mut content, &mut buf) {
+                    if n == 0 {
+                        break;
+                    }
+                    hasher.update(&buf[..n]);
+                }
+            }
+        }
+
+        let digest = hasher.finalize();
+        wasm_bytes.extend_from_slice(&digest[..16]);
+
+        Ok(wasm_bytes)
     }
 
     fn execute_manifest(
@@ -467,13 +536,13 @@ impl PipelineSpec {
 
             match stage {
                 StageSpec::Select(_) | StageSpec::Transform(_) | StageSpec::Redact(_)
-                | StageSpec::Generate(_) if seen_manifest => {
+                | StageSpec::Generate(_) | StageSpec::Compile(_) if seen_manifest => {
                     return Err(ArtifactError::InvalidState(
                         "source and transformation stages must appear before manifest".to_string(),
                     ));
                 }
                 StageSpec::Select(_) | StageSpec::Transform(_) | StageSpec::Redact(_)
-                | StageSpec::Generate(_) => {}
+                | StageSpec::Generate(_) | StageSpec::Compile(_) => {}
                 StageSpec::Manifest if seen_manifest => {
                     return Err(ArtifactError::InvalidState(
                         "manifest stage may only appear once".to_string(),

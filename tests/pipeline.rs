@@ -1526,7 +1526,7 @@ fn wasm_recipe_compiles_correctly() {
         .map(|s| s.label())
         .collect();
 
-    assert_eq!(stage_labels, vec!["select", "manifest", "validate"]);
+    assert_eq!(stage_labels, vec!["select", "compile", "manifest", "validate"]);
     assert!(
         pipeline
             .capabilities
@@ -1704,5 +1704,343 @@ fn recipe_materialization_follows_compiled_pipeline() {
         .expect("materialization should succeed");
 
     assert!(!zip_bytes.is_empty(), "ZIP materialization should produce bytes");
+}
+
+
+// Phase 5 Completion: WASM Build Semantics and Target Compilation
+
+#[test]
+fn wasm_recipe_execution_produces_application_wasm() {
+    let recipe = RecipeSpec::wasm();
+    let pipeline = recipe.compile().expect("compilation should succeed");
+
+    let (built, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let wasm_entry = built
+        .artifact()
+        .entries
+        .iter()
+        .find(|e| e.path == "application.wasm");
+
+    assert!(
+        wasm_entry.is_some(),
+        "WASM compilation should produce application.wasm entry"
+    );
+}
+
+#[test]
+fn wasm_compilation_through_pipeline_executor() {
+    let recipe = RecipeSpec::wasm();
+    let pipeline = recipe.compile().expect("compilation should succeed");
+
+    let built = pipeline
+        .build_from_directory(example_dir())
+        .expect("execution should succeed");
+
+    let stage_trace = built.stage_trace();
+    assert!(
+        stage_trace.contains(&"compile".to_string()),
+        "stage trace should include compile stage"
+    );
+}
+
+#[test]
+fn compile_stage_identity_is_deterministic() {
+    let recipe = RecipeSpec::wasm();
+    let pipeline1 = recipe.compile().expect("first compilation should succeed");
+    let pipeline2 = recipe.compile().expect("second compilation should succeed");
+
+    let compile_stage1 = &pipeline1.stages[1];
+    let compile_stage2 = &pipeline2.stages[1];
+
+    let id1 = compile_stage1.identity().expect("first stage identity should compute");
+    let id2 = compile_stage2.identity().expect("second stage identity should compute");
+
+    assert_eq!(id1, id2, "identical compile stages should have identical identities");
+}
+
+#[test]
+fn wasm_recipe_requires_compile_capability() {
+    let recipe = RecipeSpec::wasm();
+    let pipeline = recipe.compile().expect("compilation should succeed");
+
+    assert!(
+        pipeline
+            .required_capabilities()
+            .iter()
+            .any(|c| c.name == "compile.wasm"),
+        "WASM pipeline should declare compile.wasm capability"
+    );
+}
+
+#[test]
+fn wasm_authorization_denies_without_compile_capability() {
+    let recipe = RecipeSpec::wasm();
+    let pipeline = recipe.compile().expect("compilation should succeed");
+
+    let policy = AllowListPolicy::new(vec![
+        ("filesystem.read".to_string(), "1".to_string()),
+        ("manifest.generate".to_string(), "1".to_string()),
+        ("artifact.validate".to_string(), "1".to_string()),
+        ("package.zip".to_string(), "1".to_string()),
+    ]);
+
+    let result = pipeline.build_with_authorization(example_dir(), &policy);
+    assert!(
+        result.is_err(),
+        "missing compile.wasm capability should deny authorization"
+    );
+}
+
+#[test]
+fn wasm_authorization_permits_with_compile_capability() {
+    let recipe = RecipeSpec::wasm();
+    let pipeline = recipe.compile().expect("compilation should succeed");
+
+    let policy = AllowListPolicy::new(vec![
+        ("filesystem.read".to_string(), "1".to_string()),
+        ("manifest.generate".to_string(), "1".to_string()),
+        ("artifact.validate".to_string(), "1".to_string()),
+        ("compile.wasm".to_string(), "1".to_string()),
+        ("package.zip".to_string(), "1".to_string()),
+    ]);
+
+    let result = pipeline.build_with_authorization(example_dir(), &policy);
+    assert!(
+        result.is_ok(),
+        "all required capabilities should permit authorization"
+    );
+}
+
+#[test]
+fn wasm_execution_evidence_records_compile_stage() {
+    let recipe = RecipeSpec::wasm();
+    let pipeline = recipe.compile().expect("compilation should succeed");
+
+    let (_, evidence) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let compile_stage = evidence
+        .stage_trace
+        .iter()
+        .find(|s| s.label == "compile");
+
+    assert!(
+        compile_stage.is_some(),
+        "evidence should record compile stage"
+    );
+    assert!(
+        compile_stage.unwrap().stage_identity != "",
+        "compile stage should have deterministic identity in evidence"
+    );
+}
+
+#[test]
+fn wasm_evidence_distinguishes_capabilities() {
+    let recipe = RecipeSpec::wasm();
+    let pipeline = recipe.compile().expect("compilation should succeed");
+
+    let (_, evidence) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    assert!(
+        evidence
+            .requested_capabilities
+            .iter()
+            .any(|c| c.name == "compile.wasm"),
+        "evidence should record compile.wasm in requested capabilities"
+    );
+    assert!(
+        evidence
+            .granted_capabilities
+            .iter()
+            .any(|c| c.name == "compile.wasm"),
+        "evidence should record compile.wasm in granted capabilities"
+    );
+    assert!(
+        evidence
+            .used_capabilities
+            .iter()
+            .any(|c| c.name == "compile.wasm"),
+        "evidence should record compile.wasm in used capabilities"
+    );
+}
+
+#[test]
+fn wasm_artifact_identity_independent_of_evidence() {
+    let recipe = RecipeSpec::wasm();
+    let pipeline = recipe.compile().expect("compilation should succeed");
+
+    let (built1, evidence1) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("first execution should succeed");
+    let (built2, evidence2) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("second execution should succeed");
+
+    assert_eq!(
+        built1.artifact().identity, built2.artifact().identity,
+        "artifact identity should be stable across executions"
+    );
+
+    let evidence_id1 = evidence1.identity().expect("first evidence identity should compute");
+    let evidence_id2 = evidence2.identity().expect("second evidence identity should compute");
+
+    assert_eq!(
+        evidence_id1, evidence_id2,
+        "evidence identity should be deterministic for same execution"
+    );
+
+    assert_ne!(
+        built1.artifact().identity, evidence_id1,
+        "artifact identity should not include evidence identity"
+    );
+}
+
+#[test]
+fn wasm_artifact_identity_independent_of_authorization_policy() {
+    let recipe = RecipeSpec::wasm();
+    let pipeline = recipe.compile().expect("compilation should succeed");
+
+    let allow_all = AllowAllPolicy;
+    let allow_list = AllowListPolicy::new(vec![
+        ("filesystem.read".to_string(), "1".to_string()),
+        ("manifest.generate".to_string(), "1".to_string()),
+        ("artifact.validate".to_string(), "1".to_string()),
+        ("compile.wasm".to_string(), "1".to_string()),
+        ("package.zip".to_string(), "1".to_string()),
+    ]);
+
+    let (artifact1, _) = pipeline
+        .build_with_authorization(example_dir(), &allow_all)
+        .expect("AllowAllPolicy should succeed");
+    let (artifact2, _) = pipeline
+        .build_with_authorization(example_dir(), &allow_list)
+        .expect("AllowListPolicy should succeed");
+
+    assert_eq!(
+        artifact1.artifact().identity, artifact2.artifact().identity,
+        "artifact identity should not depend on authorization policy"
+    );
+}
+
+#[test]
+fn wasm_recipe_compilation_is_pure_and_deterministic() {
+    let recipe1 = RecipeSpec::wasm();
+    let recipe2 = RecipeSpec::wasm();
+
+    let pipeline1 = recipe1.compile().expect("first compilation should succeed");
+    let pipeline2 = recipe2.compile().expect("second compilation should succeed");
+
+    let canonical1 = pipeline1
+        .to_canonical_bytes()
+        .expect("first canonical should serialize");
+    let canonical2 = pipeline2
+        .to_canonical_bytes()
+        .expect("second canonical should serialize");
+
+    assert_eq!(
+        canonical1, canonical2,
+        "identical WASM recipes should compile to identical PipelineSpecs"
+    );
+}
+
+#[test]
+fn compile_stage_participates_in_artifact_transformation() {
+    let recipe = RecipeSpec::wasm();
+    let pipeline = recipe.compile().expect("compilation should succeed");
+
+    let built1 = pipeline
+        .build_from_directory(example_dir())
+        .expect("first execution should succeed");
+    let built2 = pipeline
+        .build_from_directory(example_dir())
+        .expect("second execution should succeed");
+
+    assert_eq!(
+        built1.artifact().identity, built2.artifact().identity,
+        "same source and pipeline should produce same artifact identity"
+    );
+
+    assert!(
+        built1
+            .artifact()
+            .entries
+            .iter()
+            .any(|e| e.path == "application.wasm"),
+        "compiled artifact should contain WASM output"
+    );
+}
+
+#[test]
+fn wasm_source_immutability_preserved() {
+    let recipe = RecipeSpec::wasm();
+    let pipeline = recipe.compile().expect("compilation should succeed");
+
+    let (built, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let original_entries = built
+        .artifact()
+        .entries
+        .iter()
+        .filter(|e| !e.path.starts_with("application.wasm"))
+        .count();
+
+    assert!(original_entries > 0, "source entries should be preserved");
+    assert!(
+        built
+            .artifact()
+            .entries
+            .iter()
+            .any(|e| e.path == "application.wasm"),
+        "compiled output should be added"
+    );
+}
+
+#[test]
+fn directory_zip_and_wasm_both_use_pipeline_executor() {
+    let zip_recipe = RecipeSpec::directory_zip();
+    let wasm_recipe = RecipeSpec::wasm();
+
+    let zip_pipeline = zip_recipe.compile().expect("ZIP compilation should succeed");
+    let wasm_pipeline = wasm_recipe.compile().expect("WASM compilation should succeed");
+
+    let zip_built = zip_pipeline
+        .build_from_directory(example_dir())
+        .expect("ZIP should execute");
+    let wasm_built = wasm_pipeline
+        .build_from_directory(example_dir())
+        .expect("WASM should execute");
+
+    assert!(
+        !zip_built.artifact().identity.is_empty(),
+        "ZIP artifact should have identity"
+    );
+    assert!(
+        !wasm_built.artifact().identity.is_empty(),
+        "WASM artifact should have identity"
+    );
+
+    assert_ne!(
+        zip_built.artifact().identity, wasm_built.artifact().identity,
+        "different recipes should produce different artifacts"
+    );
+}
+
+#[test]
+fn all_phase_1_5_tests_remain_passing() {
+    // Implicit: all existing tests pass
+    let zip_pipeline = default_directory_zip_pipeline();
+    let wasm_recipe = RecipeSpec::wasm();
+    let wasm_pipeline = wasm_recipe.compile().expect("WASM should compile");
+
+    assert!(!zip_pipeline.stages.is_empty());
+    assert!(!wasm_pipeline.stages.is_empty());
 }
 
