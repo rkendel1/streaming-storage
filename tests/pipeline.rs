@@ -1,8 +1,9 @@
 use artifact::{
     Artifact, ArtifactEntry, Capability, ContentResolver, CreationMetadata, EntryType,
-    MaterializationResult, MemoryContentResolver, PipelineSpec, Provenance, SelectStageSpec,
-    SourceSpec, StageSpec, TarMaterializer, ZipMaterializer, default_directory_zip_pipeline,
-    normalize_relative_path,
+    GenerateTransform, MaterializationResult, MemoryContentResolver, PipelineSpec, Provenance,
+    PrefixTransform, RedactTransform, SelectStageSpec, SourceSpec, StageSpec, TarMaterializer,
+    TransformedContentResolver, ZipMaterializer, default_directory_zip_pipeline,
+    normalize_relative_path, ArtifactTransform,
 };
 use sha2::Digest;
 use std::collections::BTreeMap;
@@ -499,6 +500,168 @@ fn provenance_changes_do_not_alter_artifact_identity() {
     assert_eq!(
         artifact.identity, artifact_with_timestamp.identity,
         "artifact identity should not change with creation_metadata"
+    );
+}
+
+#[test]
+fn prefix_transform_changes_artifact_identity() {
+    let built = default_directory_zip_pipeline()
+        .build_from_directory(example_dir())
+        .expect("pipeline should build example");
+    let artifact = built.artifact();
+    let original_identity = artifact.identity.clone();
+
+    let transform = PrefixTransform::new("bundle");
+    let result = transform
+        .apply(artifact, &built)
+        .expect("prefix transform should succeed");
+
+    assert_ne!(
+        result.artifact.identity, original_identity,
+        "prefix transformation should change artifact identity"
+    );
+    assert_eq!(result.artifact.entries.len(), artifact.entries.len());
+    for entry in &result.artifact.entries {
+        assert!(entry.path.starts_with("bundle/"));
+    }
+}
+
+#[test]
+fn redact_transform_removes_entries_and_changes_identity() {
+    let built = default_directory_zip_pipeline()
+        .build_from_directory(example_dir())
+        .expect("pipeline should build example");
+    let artifact = built.artifact();
+    let original_identity = artifact.identity.clone();
+    let original_entry_count = artifact.entries.len();
+
+    let transform = RedactTransform::new(vec!["README.md".to_string()]);
+    let result = transform
+        .apply(artifact, &built)
+        .expect("redact transform should succeed");
+
+    assert_ne!(result.artifact.identity, original_identity);
+    assert_eq!(result.artifact.entries.len(), original_entry_count - 1);
+    assert!(result
+        .artifact
+        .entries
+        .iter()
+        .all(|e| e.path != "README.md"));
+}
+
+#[test]
+fn generate_transform_adds_entry_and_changes_identity() {
+    let built = default_directory_zip_pipeline()
+        .build_from_directory(example_dir())
+        .expect("pipeline should build example");
+    let artifact = built.artifact();
+    let original_identity = artifact.identity.clone();
+    let original_entry_count = artifact.entries.len();
+
+    let transform = GenerateTransform::new("generated.txt", "hello world");
+    let result = transform
+        .apply(artifact, &built)
+        .expect("generate transform should succeed");
+
+    assert_ne!(result.artifact.identity, original_identity);
+    assert_eq!(result.artifact.entries.len(), original_entry_count + 1);
+    assert!(result
+        .artifact
+        .entries
+        .iter()
+        .any(|e| e.path == "generated.txt"));
+}
+
+#[test]
+fn transformed_artifact_materializes_to_zip() {
+    let built = default_directory_zip_pipeline()
+        .build_from_directory(example_dir())
+        .expect("pipeline should build example");
+    let artifact = built.artifact();
+
+    let transform = PrefixTransform::new("bundle");
+    let transformed = transform
+        .apply(artifact, &built)
+        .expect("prefix transform should succeed");
+
+    let resolver = TransformedContentResolver::new(transformed.content_updates.clone());
+    let zip = ZipMaterializer
+        .materialize_to_vec(&transformed.artifact, &resolver)
+        .expect("transformed artifact should materialize to ZIP");
+
+    assert!(!zip.is_empty());
+}
+
+#[test]
+fn transformed_artifact_materializes_to_tar() {
+    let built = default_directory_zip_pipeline()
+        .build_from_directory(example_dir())
+        .expect("pipeline should build example");
+    let artifact = built.artifact();
+
+    let transform = PrefixTransform::new("bundle");
+    let transformed = transform
+        .apply(artifact, &built)
+        .expect("prefix transform should succeed");
+
+    let resolver = TransformedContentResolver::new(transformed.content_updates.clone());
+    let tar = TarMaterializer
+        .materialize_to_vec(&transformed.artifact, &resolver)
+        .expect("transformed artifact should materialize to TAR");
+
+    assert!(!tar.is_empty());
+}
+
+#[test]
+fn transformed_artifact_same_identity_with_same_transform() {
+    let built = default_directory_zip_pipeline()
+        .build_from_directory(example_dir())
+        .expect("pipeline should build example");
+    let artifact = built.artifact();
+
+    let transform = PrefixTransform::new("bundle");
+    let first = transform
+        .apply(artifact, &built)
+        .expect("first transform should succeed");
+    let second = transform
+        .apply(artifact, &built)
+        .expect("second transform should succeed");
+
+    assert_eq!(
+        first.artifact.identity, second.artifact.identity,
+        "same transformation should produce same logical identity"
+    );
+}
+
+#[test]
+fn transformed_artifact_different_digests_zip_vs_tar() {
+    let built = default_directory_zip_pipeline()
+        .build_from_directory(example_dir())
+        .expect("pipeline should build example");
+    let artifact = built.artifact();
+
+    let transform = PrefixTransform::new("bundle");
+    let transformed = transform
+        .apply(artifact, &built)
+        .expect("prefix transform should succeed");
+
+    let resolver = TransformedContentResolver::new(transformed.content_updates.clone());
+    let transformed_artifact = &transformed.artifact;
+
+    let zip_bytes = ZipMaterializer
+        .materialize_to_vec(transformed_artifact, &resolver)
+        .expect("ZIP should materialize");
+    let tar_bytes = TarMaterializer
+        .materialize_to_vec(transformed_artifact, &resolver)
+        .expect("TAR should materialize");
+
+    let zip_digest = digest_for_bytes(&zip_bytes);
+    let tar_digest = digest_for_bytes(&tar_bytes);
+
+    assert_ne!(zip_digest, tar_digest);
+    assert_eq!(
+        transformed_artifact.identity, transformed_artifact.identity,
+        "artifact identity should be consistent"
     );
 }
 

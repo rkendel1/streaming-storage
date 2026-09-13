@@ -56,9 +56,54 @@ impl SelectStageSpec {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct TransformStageSpec {
+    pub prefix: String,
+}
+
+impl TransformStageSpec {
+    pub fn new(prefix: impl Into<String>) -> Result<Self, ArtifactError> {
+        let prefix = prefix.into();
+        normalize_relative_path(&prefix)?;
+        Ok(Self { prefix })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RedactStageSpec {
+    pub paths: Vec<String>,
+}
+
+impl RedactStageSpec {
+    pub fn new(paths: Vec<String>) -> Result<Self, ArtifactError> {
+        let paths = canonical_path_list(paths)?;
+        Ok(Self { paths })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct GenerateStageSpec {
+    pub path: String,
+    pub content: String,
+}
+
+impl GenerateStageSpec {
+    pub fn new(path: impl Into<String>, content: impl Into<String>) -> Result<Self, ArtifactError> {
+        let path = path.into();
+        normalize_relative_path(&path)?;
+        Ok(Self {
+            path,
+            content: content.into(),
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StageSpec {
     Select(SelectStageSpec),
+    Transform(TransformStageSpec),
+    Redact(RedactStageSpec),
+    Generate(GenerateStageSpec),
     Manifest,
     Validate,
 }
@@ -67,9 +112,20 @@ impl StageSpec {
     pub fn label(&self) -> &'static str {
         match self {
             Self::Select(_) => "select",
+            Self::Transform(_) => "transform",
+            Self::Redact(_) => "redact",
+            Self::Generate(_) => "generate",
             Self::Manifest => "manifest",
             Self::Validate => "validate",
         }
+    }
+
+    pub fn identity(&self) -> Result<String, ArtifactError> {
+        let canonical = serde_json::json!({
+            "kind": self.label(),
+            "spec": self,
+        });
+        Ok(sha256_prefixed(&serde_json::to_vec(&canonical)?))
     }
 }
 
@@ -104,53 +160,13 @@ impl PipelineSpec {
     }
 
     pub fn to_canonical_bytes(&self) -> Result<Vec<u8>, ArtifactError> {
-        #[derive(Serialize)]
-        struct CanonicalPipeline<'a> {
-            schema: &'static str,
-            source: &'a SourceSpec,
-            stages: Vec<CanonicalStage>,
-            materializer: &'a MaterializerSpec,
-            capabilities: Vec<Capability>,
-        }
-
-        #[derive(Serialize)]
-        struct CanonicalStage {
-            kind: &'static str,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            exclude_exact: Option<Vec<String>>,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            exclude_prefixes: Option<Vec<String>>,
-        }
-
-        let stages = self
-            .stages
-            .iter()
-            .map(|stage| match stage {
-                StageSpec::Select(spec) => CanonicalStage {
-                    kind: "select",
-                    exclude_exact: Some(spec.exclude_exact.clone()),
-                    exclude_prefixes: Some(spec.exclude_prefixes.clone()),
-                },
-                StageSpec::Manifest => CanonicalStage {
-                    kind: "manifest",
-                    exclude_exact: None,
-                    exclude_prefixes: None,
-                },
-                StageSpec::Validate => CanonicalStage {
-                    kind: "validate",
-                    exclude_exact: None,
-                    exclude_prefixes: None,
-                },
-            })
-            .collect();
-
-        let canonical = CanonicalPipeline {
-            schema: "pipeline.v1",
-            source: &self.source,
-            stages,
-            materializer: &self.materializer,
-            capabilities: canonical_capabilities(self.capabilities.clone()),
-        };
+        let canonical = serde_json::json!({
+            "schema": "pipeline.v1",
+            "source": &self.source,
+            "stages": &self.stages,
+            "materializer": &self.materializer,
+            "capabilities": canonical_capabilities(self.capabilities.clone()),
+        });
 
         Ok(serde_json::to_vec(&canonical)?)
     }
@@ -175,6 +191,21 @@ impl PipelineSpec {
             state.stage_trace.push(stage.label().to_string());
             match stage {
                 StageSpec::Select(spec) => state.apply_select(spec),
+                StageSpec::Transform(_) => {
+                    return Err(ArtifactError::InvalidState(
+                        "transform stages not yet supported in Phase 2 pipeline execution".to_string(),
+                    ))
+                }
+                StageSpec::Redact(_) => {
+                    return Err(ArtifactError::InvalidState(
+                        "redact stages not yet supported in Phase 2 pipeline execution".to_string(),
+                    ))
+                }
+                StageSpec::Generate(_) => {
+                    return Err(ArtifactError::InvalidState(
+                        "generate stages not yet supported in Phase 2 pipeline execution".to_string(),
+                    ))
+                }
                 StageSpec::Manifest => {
                     state.generate_manifest_seed(&pipeline_identity, &self.capabilities)?
                 }
@@ -207,17 +238,19 @@ impl PipelineSpec {
         for stage in &self.stages {
             if seen_validate {
                 return Err(ArtifactError::InvalidState(
-                    "validate must be the final stage in Phase 1 pipelines".to_string(),
+                    "validate must be the final stage".to_string(),
                 ));
             }
 
             match stage {
-                StageSpec::Select(_) if seen_manifest => {
+                StageSpec::Select(_) | StageSpec::Transform(_) | StageSpec::Redact(_)
+                | StageSpec::Generate(_) if seen_manifest => {
                     return Err(ArtifactError::InvalidState(
-                        "select stages must appear before manifest".to_string(),
+                        "source and transformation stages must appear before manifest".to_string(),
                     ));
                 }
-                StageSpec::Select(_) => {}
+                StageSpec::Select(_) | StageSpec::Transform(_) | StageSpec::Redact(_)
+                | StageSpec::Generate(_) => {}
                 StageSpec::Manifest if seen_manifest => {
                     return Err(ArtifactError::InvalidState(
                         "manifest stage may only appear once".to_string(),
@@ -532,6 +565,28 @@ impl MemoryContentResolver {
 }
 
 impl ContentResolver for MemoryContentResolver {
+    fn resolve(&self, path: &str) -> Result<Box<dyn Read>, ArtifactError> {
+        let bytes = self
+            .entries
+            .get(path)
+            .cloned()
+            .ok_or_else(|| ArtifactError::Materialization(format!("missing content for {path}")))?;
+        Ok(Box::new(std::io::Cursor::new(bytes)))
+    }
+}
+
+#[derive(Debug)]
+pub struct TransformedContentResolver {
+    entries: BTreeMap<String, Vec<u8>>,
+}
+
+impl TransformedContentResolver {
+    pub fn new(entries: BTreeMap<String, Vec<u8>>) -> Self {
+        Self { entries }
+    }
+}
+
+impl ContentResolver for TransformedContentResolver {
     fn resolve(&self, path: &str) -> Result<Box<dyn Read>, ArtifactError> {
         let bytes = self
             .entries
