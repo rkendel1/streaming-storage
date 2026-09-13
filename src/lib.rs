@@ -1,5 +1,6 @@
 pub mod application;
 pub mod authorization;
+pub mod composition;
 pub mod core;
 pub mod materializers;
 pub mod pipeline;
@@ -14,6 +15,7 @@ pub use crate::authorization::{
     AllowAllPolicy, AllowListPolicy, AuthorizationDecision, AuthorizationResult, CapabilityPolicy,
     ExecutedStage, ExecutionEvidence, ExecutionResult,
 };
+pub use crate::composition::{CollisionPolicy, CompositionInput, CompositionOptions};
 pub use crate::core::{
     Artifact, ArtifactEntry, ArtifactError, Capability, CreationMetadata, EntryType, Manifest,
     MaterializationResult, Provenance, normalize_relative_path, validate_entry_layout,

@@ -4,7 +4,7 @@ use artifact::{
     PrefixTransform, RedactTransform, RecipeSpec, SelectStageSpec, SourceSpec, StageSpec, TarMaterializer,
     TransformedContentResolver, ZipMaterializer, default_directory_zip_pipeline,
     normalize_relative_path, ArtifactTransform, AllowAllPolicy, AllowListPolicy, AuthorizationResult,
-    CapabilityPolicy,
+    CapabilityPolicy, ArtifactSDK,
 };
 use sha2::Digest;
 use std::collections::BTreeMap;
@@ -2640,3 +2640,132 @@ fn application_artifact_boundaries_clear() {
     // It is purely an interpretation layer.
 }
 
+// ============================================================================
+// Phase 8 Foundation Tests: Artifact Composition
+// ============================================================================
+
+#[test]
+fn composition_single_artifact_preserves_identity() {
+    let recipe = RecipeSpec::directory_zip();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let a = artifact.as_artifact().clone();
+    let original_identity = a.identity.clone();
+
+    let composition_input = artifact::CompositionInput::new(vec![a]);
+    let composed = composition_input
+        .compose(artifact::CompositionOptions::default())
+        .expect("composition should succeed");
+
+    assert_eq!(
+        composed.identity, original_identity,
+        "composition of single artifact preserves identity"
+    );
+}
+
+#[test]
+fn composition_produces_ordinary_artifact() {
+    let recipe = RecipeSpec::directory_zip();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let a = artifact.as_artifact().clone();
+
+    let composition_input = artifact::CompositionInput::new(vec![a]);
+    let composed = composition_input
+        .compose(artifact::CompositionOptions::default())
+        .expect("composition should succeed");
+
+    // Result is an ordinary Artifact
+    assert!(!composed.identity.is_empty(), "composed artifact has identity");
+    assert!(!composed.entries.is_empty(), "composed artifact has entries");
+    assert!(!composed.capabilities.is_empty(), "composed artifact has capabilities");
+}
+
+#[test]
+fn composition_identity_is_deterministic() {
+    let recipe = RecipeSpec::directory_zip();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let a = artifact.as_artifact().clone();
+
+    let composition1 = artifact::CompositionInput::new(vec![a.clone()]);
+    let composed1 = composition1
+        .compose(artifact::CompositionOptions::default())
+        .expect("composition should succeed");
+
+    let composition2 = artifact::CompositionInput::new(vec![a]);
+    let composed2 = composition2
+        .compose(artifact::CompositionOptions::default())
+        .expect("composition should succeed");
+
+    assert_eq!(composed1.identity, composed2.identity, "composition is deterministic");
+}
+
+#[test]
+fn composition_preserves_capabilities() {
+    let recipe = RecipeSpec::wasm();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, evidence) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let wasm_artifact = artifact.as_artifact().clone();
+    let capabilities = evidence.used_capabilities();
+
+    let composition_input = artifact::CompositionInput::new(vec![wasm_artifact]);
+    let composed = composition_input
+        .compose(artifact::CompositionOptions::default())
+        .expect("composition should succeed");
+
+    assert!(
+        capabilities
+            .iter()
+            .all(|cap| composed.capabilities.iter().any(|c| c == cap)),
+        "composition preserves capabilities"
+    );
+}
+
+#[test]
+fn composition_no_second_execution_engine() {
+    // This test documents that composition does NOT introduce:
+    // - CompositeArtifact type
+    // - CompositionPipeline
+    // - ApplicationGraph
+    // - Second execution engine
+    //
+    // Composition is purely a merge operation using existing Artifact model
+
+    let recipe = RecipeSpec::directory_zip();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let a = artifact.as_artifact().clone();
+
+    let composition_input = artifact::CompositionInput::new(vec![a]);
+    let _composed = composition_input
+        .compose(artifact::CompositionOptions::default())
+        .expect("composition should succeed");
+
+    // Result is Artifact type, not a new CompositeArtifact or similar
+}
