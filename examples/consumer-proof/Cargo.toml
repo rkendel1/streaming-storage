@@ -1,0 +1,11 @@
+[package]
+name = "artifact-consumer-proof"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+artifact = { path = "../.." }
+sha2 = "0.10"
+
+[dev-dependencies]
+uuid = { version = "1.0", features = ["v4"] }
