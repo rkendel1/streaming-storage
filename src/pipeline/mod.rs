@@ -294,6 +294,84 @@ impl PipelineSpec {
         Ok(serde_json::to_vec(&canonical)?)
     }
 
+    pub fn required_capabilities(&self) -> Vec<Capability> {
+        canonical_capabilities(self.capabilities.clone())
+    }
+
+    pub fn build_with_authorization(
+        &self,
+        root: impl AsRef<Path>,
+        policy: &dyn crate::authorization::CapabilityPolicy,
+    ) -> Result<(SourceBackedArtifact, crate::authorization::ExecutionEvidence), ArtifactError> {
+        let pipeline_identity = self.identity()?;
+        let requested_capabilities = self.required_capabilities();
+        let policy_identity = policy.identity();
+
+        let granted_capabilities = match policy.authorize(&requested_capabilities) {
+            Ok(granted) => granted,
+            Err(_) => {
+                let decision = crate::authorization::AuthorizationDecision::denied(
+                    pipeline_identity.clone(),
+                    requested_capabilities.clone(),
+                    vec![],
+                    policy_identity,
+                );
+                let _evidence = crate::authorization::ExecutionEvidence::failed(
+                    pipeline_identity,
+                    decision,
+                    vec![],
+                    requested_capabilities,
+                    vec![],
+                    "authorization denied: not all capabilities granted".to_string(),
+                );
+                return Err(ArtifactError::InvalidState(
+                    "authorization denied: not all capabilities granted".to_string(),
+                ));
+            }
+        };
+
+        let decision = crate::authorization::AuthorizationDecision::allowed(
+            pipeline_identity.clone(),
+            requested_capabilities.clone(),
+            policy_identity,
+        );
+
+        match self.build_from_directory(root) {
+            Ok(artifact) => {
+                let stage_trace: Vec<crate::authorization::ExecutedStage> = artifact
+                    .stage_trace()
+                    .iter()
+                    .map(|label| crate::authorization::ExecutedStage {
+                        label: label.clone(),
+                        stage_identity: String::new(),
+                    })
+                    .collect();
+
+                let evidence = crate::authorization::ExecutionEvidence::success(
+                    pipeline_identity,
+                    artifact.artifact(),
+                    decision,
+                    stage_trace,
+                    requested_capabilities,
+                    granted_capabilities,
+                );
+
+                Ok((artifact, evidence))
+            }
+            Err(e) => {
+                let _evidence = crate::authorization::ExecutionEvidence::failed(
+                    pipeline_identity,
+                    decision,
+                    vec![],
+                    requested_capabilities,
+                    granted_capabilities,
+                    e.to_string(),
+                );
+                Err(e)
+            }
+        }
+    }
+
     pub fn build_from_directory(
         &self,
         root: impl AsRef<Path>,

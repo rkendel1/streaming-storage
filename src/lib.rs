@@ -1,8 +1,13 @@
+pub mod authorization;
 pub mod core;
 pub mod materializers;
 pub mod pipeline;
 pub mod transforms;
 
+pub use crate::authorization::{
+    AllowAllPolicy, AllowListPolicy, AuthorizationDecision, AuthorizationResult, CapabilityPolicy,
+    ExecutedStage, ExecutionEvidence, ExecutionResult,
+};
 pub use crate::core::{
     Artifact, ArtifactEntry, ArtifactError, Capability, CreationMetadata, EntryType, Manifest,
     MaterializationResult, Provenance, normalize_relative_path, validate_entry_layout,

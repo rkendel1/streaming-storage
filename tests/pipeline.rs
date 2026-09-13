@@ -3,7 +3,8 @@ use artifact::{
     GenerateTransform, MaterializationResult, MemoryContentResolver, PipelineSpec, Provenance,
     PrefixTransform, RedactTransform, SelectStageSpec, SourceSpec, StageSpec, TarMaterializer,
     TransformedContentResolver, ZipMaterializer, default_directory_zip_pipeline,
-    normalize_relative_path, ArtifactTransform,
+    normalize_relative_path, ArtifactTransform, AllowAllPolicy, AllowListPolicy, AuthorizationResult,
+    CapabilityPolicy,
 };
 use sha2::Digest;
 use std::collections::BTreeMap;
@@ -1015,6 +1016,187 @@ fn sha2_digest(data: &[u8]) -> String {
         let _ = write!(encoded, "{byte:02x}");
     }
     encoded
+}
+
+#[test]
+fn authorization_with_allow_all_policy_succeeds() {
+    let pipeline = default_directory_zip_pipeline();
+    let policy = AllowAllPolicy;
+
+    let result = pipeline.build_with_authorization(example_dir(), &policy);
+    assert!(result.is_ok(), "allow_all policy should permit execution");
+
+    let (built, evidence) = result.expect("execution should succeed");
+    assert_eq!(evidence.authorization_decision.decision, AuthorizationResult::Allowed);
+    assert!(!built.artifact().entries.is_empty());
+}
+
+#[test]
+fn authorization_with_restricted_policy_denies_missing_capabilities() {
+    let pipeline = default_directory_zip_pipeline();
+    let policy = AllowListPolicy::new(vec![
+        ("filesystem.read".to_string(), "1".to_string()),
+    ]);
+
+    let result = pipeline.build_with_authorization(example_dir(), &policy);
+    assert!(
+        result.is_err(),
+        "restricted policy missing capabilities should deny execution"
+    );
+}
+
+#[test]
+fn authorization_with_matching_policy_succeeds() {
+    let pipeline = default_directory_zip_pipeline();
+    let policy = AllowListPolicy::new(vec![
+        ("filesystem.read".to_string(), "1".to_string()),
+        ("manifest.generate".to_string(), "1".to_string()),
+        ("artifact.validate".to_string(), "1".to_string()),
+        ("package.zip".to_string(), "1".to_string()),
+    ]);
+
+    let result = pipeline.build_with_authorization(example_dir(), &policy);
+    assert!(result.is_ok(), "matching policy should permit execution");
+
+    let (_, evidence) = result.expect("execution should succeed");
+    assert_eq!(evidence.authorization_decision.decision, AuthorizationResult::Allowed);
+    assert_eq!(
+        evidence.granted_capabilities.len(),
+        pipeline.required_capabilities().len(),
+        "all capabilities should be granted"
+    );
+}
+
+#[test]
+fn authorization_decision_identifies_denied_capabilities() {
+    let pipeline = default_directory_zip_pipeline();
+    let required = pipeline.required_capabilities();
+    let granted = vec![
+        Capability::new("filesystem.read", "1"),
+        Capability::new("manifest.generate", "1"),
+    ];
+    let policy = AllowListPolicy::new(
+        granted
+            .iter()
+            .map(|c| (c.name.clone(), c.version.clone()))
+            .collect(),
+    );
+
+    let result = pipeline.build_with_authorization(example_dir(), &policy);
+    assert!(result.is_err(), "policy missing some capabilities should deny");
+}
+
+#[test]
+fn execution_evidence_records_successful_execution() {
+    let pipeline = default_directory_zip_pipeline();
+    let policy = AllowAllPolicy;
+
+    let (built, evidence) = pipeline
+        .build_with_authorization(example_dir(), &policy)
+        .expect("execution should succeed");
+
+    assert_eq!(
+        evidence.artifact_identity,
+        built.artifact().identity,
+        "evidence should reference the artifact produced"
+    );
+    assert!(!evidence.stage_trace.is_empty(), "evidence should record stage execution");
+    assert!(!evidence.used_capabilities.is_empty(), "evidence should record capabilities used");
+}
+
+#[test]
+fn pipeline_with_declarative_transform_requires_correct_capabilities() {
+    let pipeline = PipelineSpec {
+        source: SourceSpec::Directory,
+        stages: vec![
+            StageSpec::Select(SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid")),
+            StageSpec::Transform(artifact::TransformStageSpec::new("dist").expect("prefix is valid")),
+            StageSpec::Manifest,
+            StageSpec::Validate,
+        ],
+        materializer: artifact::MaterializerSpec::Zip,
+        capabilities: vec![
+            Capability::new("filesystem.read", "1"),
+            Capability::new("artifact.transform", "1"),
+            Capability::new("manifest.generate", "1"),
+            Capability::new("artifact.validate", "1"),
+            Capability::new("package.zip", "1"),
+        ],
+    };
+
+    let policy = AllowListPolicy::new(vec![
+        ("filesystem.read".to_string(), "1".to_string()),
+        ("artifact.transform".to_string(), "1".to_string()),
+        ("manifest.generate".to_string(), "1".to_string()),
+        ("artifact.validate".to_string(), "1".to_string()),
+        ("package.zip".to_string(), "1".to_string()),
+    ]);
+
+    let result = pipeline.build_with_authorization(example_dir(), &policy);
+    assert!(result.is_ok(), "pipeline with matching policy should execute");
+}
+
+#[test]
+fn authorization_decision_is_deterministic() {
+    let pipeline = default_directory_zip_pipeline();
+    let policy = AllowAllPolicy;
+
+    let result1 = pipeline.build_with_authorization(example_dir(), &policy);
+    let result2 = pipeline.build_with_authorization(example_dir(), &policy);
+
+    let (_, evidence1) = result1.expect("first execution should succeed");
+    let (_, evidence2) = result2.expect("second execution should succeed");
+
+    assert_eq!(
+        evidence1.authorization_decision.decision,
+        evidence2.authorization_decision.decision,
+        "authorization decision should be deterministic"
+    );
+    assert_eq!(
+        evidence1.pipeline_identity, evidence2.pipeline_identity,
+        "pipeline identity should be consistent"
+    );
+}
+
+#[test]
+fn denied_pipeline_produces_no_partial_execution() {
+    let pipeline = default_directory_zip_pipeline();
+    let policy = AllowListPolicy::new(vec![
+        ("filesystem.read".to_string(), "1".to_string()),
+    ]);
+
+    let result = pipeline.build_with_authorization(example_dir(), &policy);
+    assert!(result.is_err(), "denied authorization should prevent execution");
+}
+
+#[test]
+fn capability_policy_identity_is_deterministic() {
+    let policy1 = AllowListPolicy::new(vec![
+        ("filesystem.read".to_string(), "1".to_string()),
+        ("manifest.generate".to_string(), "1".to_string()),
+    ]);
+
+    let policy2 = AllowListPolicy::new(vec![
+        ("filesystem.read".to_string(), "1".to_string()),
+        ("manifest.generate".to_string(), "1".to_string()),
+    ]);
+
+    let id1 = policy1.identity();
+    let id2 = policy2.identity();
+
+    assert_eq!(id1, id2, "same policy configuration should have same identity");
+}
+
+#[test]
+fn allow_all_policy_identity_is_stable() {
+    let policy1 = AllowAllPolicy;
+    let policy2 = AllowAllPolicy;
+
+    assert_eq!(
+        policy1.identity(),
+        policy2.identity(),
+        "AllowAllPolicy identity should be stable"
+    );
 }
 
 struct StaticResolver {
