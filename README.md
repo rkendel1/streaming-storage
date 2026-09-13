@@ -25,28 +25,39 @@
   ZIP  TAR      Future
 ```
 
-## Phase 2 status (current)
+## Phase 3 status (current)
 
-**What Phase 2 proves:**
+**What Phase 3 proves:**
 
-One logical artifact can have multiple independent materializations with different physical digests.
+The artifact pipeline is a real transformation system. Stages operate on logical artifacts (not archive bytes), producing new logical artifacts with new identities. The same transformed artifact can be materialized to multiple formats.
 
 ```text
-Artifact
+Source Artifact
   identity: sha256:AAAA
   entries: 3 files
-  size: 195 bytes
        │
-       ├─→ ZIP Materializer
-       │       output_digest: sha256:BBBB
-       │       size: 511 bytes
+       ├─→ PrefixTransform("bundle")
+       │   ↓
+       │   Transformed Artifact
+       │   identity: sha256:DDDD  (changed by transformation)
+       │   entries: 3 files (with bundle/ prefix)
+       │       │
+       │       ├─→ ZIP Materializer
+       │       │   output_digest: sha256:EEEE
+       │       │
+       │       └─→ TAR Materializer
+       │           output_digest: sha256:FFFF
        │
-       └─→ TAR Materializer
-               output_digest: sha256:CCCC
-               size: 4096 bytes
+       └─→ RedactTransform(["README.md"])
+           ↓
+           Redacted Artifact
+           identity: sha256:GGGG  (changed by transformation)
+           entries: 2 files
 ```
 
-AAAA ≠ BBBB ≠ CCCC: logical identity is distinct from physical representations.
+AAAA ≠ DDDD ≠ GGGG: logical identity changes with transformations.
+DDDD = DDDD (same transform → same identity).
+EEEE ≠ FFFF: different formats have different digests.
 
 **Phase 2 scope:**
 
@@ -59,6 +70,25 @@ Implemented:
 
 Explicit non-goals: AppPort, `.app`, WASM execution, remote execution, OCI, encryption, signatures, databases, cloud storage, AI-generated pipelines, platform-specific packaging, delta encoding, CAS, and signing.
 
+**Phase 3 scope (foundation):**
+
+Implemented:
+- ArtifactTransform trait (operates on logical artifacts)
+- PrefixTransform (adds path prefix to entries)
+- RedactTransform (removes entries from logical artifact)
+- GenerateTransform (adds generated content)
+- TransformedContentResolver for materializing transformed artifacts
+- Extended StageSpec enum with Transform, Redact, Generate types
+- 7 new integration tests proving transformation semantics
+
+The foundation demonstrates:
+- Transformations operate on logical artifacts, not archive bytes
+- Each transformation produces new logical identity
+- Same transformation → same identity (determinism)
+- Different transformations → different identities
+- Transformed artifacts materialize to both ZIP and TAR
+- Same logical identity, different physical digests
+
 ## Repository structure
 
 ```text
@@ -66,9 +96,10 @@ example/                  Example hostile-friendly input tree
 src/
   bin/artifact.rs         Thin CLI
   core/                   Artifact, manifest, identity, provenance, capabilities
-  materializers/          ZIP materializer
-  pipeline/               Directory source and select/manifest/validate stages
-tests/                    Integration tests for determinism and safety
+  materializers/          ZIP and TAR materializers
+  pipeline/               Directory source, stages, resolvers
+  transforms/             ArtifactTransform trait and implementations
+tests/                    Integration tests (28 tests, all passing)
 ```
 
 ## Foundation choice
@@ -407,30 +438,72 @@ Note: artifact id is identical, output digests differ.
 - included: `README.md`, `app/index.html`, `app/app.js`
 - excluded: `.env`, `node_modules/`
 
+## Transformations (Phase 3)
+
+Transformations operate on logical artifacts and produce new logical artifacts with new identities:
+
+```rust
+pub trait ArtifactTransform {
+    fn apply(
+        &self,
+        artifact: &Artifact,
+        resolver: &dyn ContentResolver,
+    ) -> Result<TransformedArtifact, ArtifactError>;
+}
+```
+
+Key semantics:
+- Transforms consume logical Artifact + ContentResolver
+- Produces TransformedArtifact with new logical identity
+- New identity reflects structural changes (paths, entries, content)
+- Does not mutate source artifact or source filesystem
+- Works with any ContentResolver (filesystem, memory, future remote)
+
+Available transforms:
+- **PrefixTransform**: adds prefix to all entry paths
+- **RedactTransform**: removes selected entries from artifact
+- **GenerateTransform**: adds generated content to artifact
+
+Example:
+```rust
+let artifact = built.artifact();
+let transform = PrefixTransform::new("bundle");
+let result = transform.apply(artifact, &built)?;
+
+assert_ne!(artifact.identity, result.artifact.identity);
+
+let zip = ZipMaterializer.materialize_to_vec(&result.artifact, &resolver)?;
+let tar = TarMaterializer.materialize_to_vec(&result.artifact, &resolver)?;
+```
+
+Same transformed artifact, different physical digests.
+
 ## Tests
 
-21 integration tests covering:
+28 integration tests covering:
 
 **Phase 1 (15 tests):**
-- stage execution order
-- file selection and exclusion
-- path safety
-- pipeline identity determinism
-- artifact identity determinism
-- manifest determinism
-- traversal-order independence
-- deterministic ZIP output
+- stage execution order, selection, path safety
+- identity determinism (pipeline, artifact, manifest)
+- traversal-order independence, ZIP determinism
 - logical artifact inspection without ZIP materialization
-- conflicting entry rejection
-- content drift detection
+- conflicting entry rejection, content drift detection
 - symlink rejection
 
-**Phase 2 (6 new tests):**
-- format independence: same artifact produces different digests in ZIP vs TAR
+**Phase 2 (6 tests):**
+- format independence (ZIP vs TAR digests)
 - artifact identity shared across materializers
 - memory content resolver enables source independence
-- TAR materialization determinism
-- TAR result reporting
+- TAR materialization determinism, result reporting
 - provenance metadata does not alter artifact identity
+
+**Phase 3 (7 new tests):**
+- PrefixTransform changes artifact identity
+- RedactTransform removes entries and changes identity
+- GenerateTransform adds entries and changes identity
+- Transformed artifacts materialize to ZIP
+- Transformed artifacts materialize to TAR
+- Same transformation → same artifact identity
+- Transformed artifact: same logical identity, different physical digests (ZIP vs TAR)
 
 All tests use fixture directories and determinism verification to prove architectural properties.
