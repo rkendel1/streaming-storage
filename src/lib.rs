@@ -18,21 +18,22 @@ pub use crate::authorization::{
 pub use crate::composition::{CollisionPolicy, CompositionInput, CompositionOptions};
 pub use crate::core::{
     Artifact, ArtifactEntry, ArtifactError, Capability, CreationMetadata, EntryType, Manifest,
-    MaterializationResult, Provenance, normalize_relative_path, validate_entry_layout,
+    MaterializationResult, Provenance, TransformationRecord, normalize_relative_path,
+    validate_entry_layout,
 };
 pub use crate::materializers::{TarMaterializer, ZipMaterialization, ZipMaterializer};
-pub use crate::transforms::{
-    ArtifactTransform, GenerateTransform, PrefixTransform, RedactTransform, TransformedArtifact,
-};
 pub use crate::pipeline::{
-    CompileStageSpec, ContentResolver, EntryContentResolver, GenerateStageSpec, InspectedStage, MaterializerSpec,
-    MemoryContentResolver, PipelineInspection, PipelineSpec, RedactStageSpec, SelectStageSpec,
-    SourceBackedArtifact, SourceSpec, StageSpec, TransformedContentResolver, TransformStageSpec,
-    default_directory_zip_pipeline,
+    CompileStageSpec, ContentResolver, EntryContentResolver, GenerateStageSpec, InspectedStage,
+    MaterializerSpec, MemoryContentResolver, PipelineInspection, PipelineSpec, RedactStageSpec,
+    SelectStageSpec, SourceBackedArtifact, SourceSpec, StageSpec, TransformStageSpec,
+    TransformedContentResolver, default_directory_zip_pipeline,
+};
+pub use crate::public_api::{
+    ArtifactPipeline, ArtifactRecipe, ArtifactSDK, PublicArtifact, PublicArtifactEntry,
+    PublicAuthorizationDecision, PublicExecutedStage, PublicExecutionEvidence,
+    PublicPipelineInspection, PublicStage,
 };
 pub use crate::recipes::{RecipeConfig, RecipeSpec, RecipeType};
-pub use crate::public_api::{
-    ArtifactSDK, ArtifactRecipe, ArtifactPipeline, PublicPipelineInspection, PublicStage,
-    PublicArtifact, PublicArtifactEntry, PublicExecutionEvidence, PublicAuthorizationDecision,
-    PublicExecutedStage,
+pub use crate::transforms::{
+    ArtifactTransform, GenerateTransform, PrefixTransform, RedactTransform, TransformedArtifact,
 };

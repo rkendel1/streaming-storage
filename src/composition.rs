@@ -1,4 +1,4 @@
-use crate::core::{Artifact, ArtifactError, Provenance, CreationMetadata};
+use crate::core::{Artifact, ArtifactError, CreationMetadata, Provenance};
 use std::collections::BTreeMap;
 
 pub struct CompositionInput {
@@ -96,12 +96,16 @@ impl CompositionInput {
             pipeline_identity: identity_for_artifact,
             capabilities: all_capabilities,
             provenance,
+            lineage: Vec::new(),
             semantic_declaration: None,
         })
     }
 }
 
-fn compute_composition_identity(entries: &[crate::core::ArtifactEntry], composition_source: &str) -> String {
+fn compute_composition_identity(
+    entries: &[crate::core::ArtifactEntry],
+    composition_source: &str,
+) -> String {
     let mut hasher = sha2::Sha256::new();
 
     use sha2::Digest;

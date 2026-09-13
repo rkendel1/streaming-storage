@@ -51,6 +51,7 @@ Current stages include selection, transformation, redaction, generation, compila
 ### Transformation
 
 Transformations operate on logical artifacts, not archive bytes. A structural transform creates a new logical artifact with a new identity.
+The output artifact records explicit non-identity lineage back to the input artifact and transform.
 
 Implemented transforms include:
 
@@ -155,6 +156,8 @@ cargo test
 - `PRODUCT-DEFINITION.md` defines the current product boundary.
 - `PRODUCT-EXAMPLES.md` gives market-facing workflow examples.
 - `PHASE-15-KERNEL.md` records the artifact kernel and semantic boundary analysis.
+- `PHASE-16-IMPLEMENTATION-AUDIT.md` audits Phase 15 concepts against production code.
+- `PHASE-16-KERNEL-IMPLEMENTATION.md` records the Phase 16 implementation evidence.
 - `PHASE-16-PRODUCT-VALIDATION.md` tests the kernel against concrete external workflows.
 - `PHASE-14-BOUNDARY-ANALYSIS.md` records the prior boundary investigation.
 - `PHASE-14-TAXONOMY-REVISION.md` records why Contextual is an external consumption architecture.
