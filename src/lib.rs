@@ -2,6 +2,7 @@ pub mod authorization;
 pub mod core;
 pub mod materializers;
 pub mod pipeline;
+pub mod recipes;
 pub mod transforms;
 
 pub use crate::authorization::{
@@ -22,3 +23,4 @@ pub use crate::pipeline::{
     SourceBackedArtifact, SourceSpec, StageSpec, TransformedContentResolver, TransformStageSpec,
     default_directory_zip_pipeline,
 };
+pub use crate::recipes::{RecipeConfig, RecipeSpec, RecipeType};

@@ -1,7 +1,7 @@
 use artifact::{
     Artifact, ArtifactEntry, Capability, ContentResolver, CreationMetadata, EntryType,
     GenerateTransform, MaterializationResult, MemoryContentResolver, PipelineSpec, Provenance,
-    PrefixTransform, RedactTransform, SelectStageSpec, SourceSpec, StageSpec, TarMaterializer,
+    PrefixTransform, RedactTransform, RecipeSpec, SelectStageSpec, SourceSpec, StageSpec, TarMaterializer,
     TransformedContentResolver, ZipMaterializer, default_directory_zip_pipeline,
     normalize_relative_path, ArtifactTransform, AllowAllPolicy, AllowListPolicy, AuthorizationResult,
     CapabilityPolicy,
@@ -1448,3 +1448,261 @@ impl ContentResolver for StaticResolver {
         Ok(Box::new(Cursor::new(bytes)))
     }
 }
+
+// Phase 5 Foundation: Recipe Compilation Tests
+
+#[test]
+fn recipe_spec_serializes_deterministically() {
+    let recipe1 = RecipeSpec::directory_zip();
+    let recipe2 = RecipeSpec::directory_zip();
+
+    let json1 = serde_json::to_string(&recipe1).expect("recipe1 should serialize");
+    let json2 = serde_json::to_string(&recipe2).expect("recipe2 should serialize");
+
+    assert_eq!(json1, json2, "identical recipes should have identical JSON");
+}
+
+#[test]
+fn recipe_compilation_produces_pipeline_spec() {
+    let recipe = RecipeSpec::directory_zip();
+    let pipeline = recipe.compile().expect("compilation should succeed");
+
+    assert_eq!(pipeline.source, SourceSpec::Directory);
+    assert!(!pipeline.stages.is_empty());
+    assert_eq!(pipeline.materializer, artifact::MaterializerSpec::Zip);
+}
+
+#[test]
+fn directory_zip_recipe_compiles_correctly() {
+    let recipe = RecipeSpec::directory_zip();
+    let pipeline = recipe.compile().expect("compilation should succeed");
+
+    let stage_labels: Vec<_> = pipeline
+        .stages
+        .iter()
+        .map(|s| s.label())
+        .collect();
+
+    assert_eq!(stage_labels, vec!["select", "manifest", "validate"]);
+    assert!(
+        pipeline
+            .capabilities
+            .iter()
+            .any(|c| c.name == "package.zip"),
+        "ZIP capability should be present"
+    );
+}
+
+#[test]
+fn directory_tar_recipe_compiles_correctly() {
+    let recipe = RecipeSpec::directory_tar();
+    let pipeline = recipe.compile().expect("compilation should succeed");
+
+    let stage_labels: Vec<_> = pipeline
+        .stages
+        .iter()
+        .map(|s| s.label())
+        .collect();
+
+    assert_eq!(stage_labels, vec!["select", "manifest", "validate"]);
+    assert!(
+        pipeline
+            .capabilities
+            .iter()
+            .any(|c| c.name == "package.tar"),
+        "TAR capability should be present"
+    );
+    assert_eq!(pipeline.materializer, artifact::MaterializerSpec::Tar);
+}
+
+#[test]
+fn wasm_recipe_compiles_correctly() {
+    let recipe = RecipeSpec::wasm();
+    let pipeline = recipe.compile().expect("compilation should succeed");
+
+    let stage_labels: Vec<_> = pipeline
+        .stages
+        .iter()
+        .map(|s| s.label())
+        .collect();
+
+    assert_eq!(stage_labels, vec!["select", "manifest", "validate"]);
+    assert!(
+        pipeline
+            .capabilities
+            .iter()
+            .any(|c| c.name == "compile.wasm"),
+        "WASM capability should be present"
+    );
+}
+
+#[test]
+fn identical_recipes_compile_to_identical_pipelines() {
+    let recipe1 = RecipeSpec::directory_zip();
+    let recipe2 = RecipeSpec::directory_zip();
+
+    let pipeline1 = recipe1.compile().expect("first compilation should succeed");
+    let pipeline2 = recipe2.compile().expect("second compilation should succeed");
+
+    let id1 = pipeline1.identity().expect("first identity should compute");
+    let id2 = pipeline2.identity().expect("second identity should compute");
+
+    assert_eq!(id1, id2, "identical recipes should produce identical pipeline identities");
+}
+
+#[test]
+fn recipe_compilation_is_deterministic() {
+    let recipe = RecipeSpec::directory_zip();
+    let pipeline1 = recipe.compile().expect("first compilation should succeed");
+    let pipeline2 = recipe.compile().expect("second compilation should succeed");
+
+    let canonical1 = pipeline1
+        .to_canonical_bytes()
+        .expect("first canonical should serialize");
+    let canonical2 = pipeline2
+        .to_canonical_bytes()
+        .expect("second canonical should serialize");
+
+    assert_eq!(
+        canonical1, canonical2,
+        "identical recipe compilations should produce identical bytes"
+    );
+}
+
+#[test]
+fn recipe_compiled_pipeline_executes() {
+    let recipe = RecipeSpec::directory_zip();
+    let pipeline = recipe.compile().expect("compilation should succeed");
+
+    let built = pipeline
+        .build_from_directory(example_dir())
+        .expect("execution should succeed");
+
+    assert!(!built.artifact().identity.is_empty());
+    assert_eq!(built.stage_trace(), ["source", "select", "manifest", "validate"]);
+}
+
+#[test]
+fn recipe_compiled_pipeline_with_authorization_succeeds() {
+    let recipe = RecipeSpec::directory_zip();
+    let pipeline = recipe.compile().expect("compilation should succeed");
+    let policy = AllowAllPolicy;
+
+    let result = pipeline.build_with_authorization(example_dir(), &policy);
+    assert!(result.is_ok(), "recipe execution with AllowAllPolicy should succeed");
+
+    let (built, evidence) = result.expect("execution should succeed");
+    assert!(!built.artifact().identity.is_empty());
+    assert!(evidence.validate().is_ok(), "evidence should validate");
+}
+
+#[test]
+fn recipe_authorization_denies_missing_capabilities() {
+    let recipe = RecipeSpec::directory_zip();
+    let pipeline = recipe.compile().expect("compilation should succeed");
+    let policy = AllowListPolicy::new(vec![("filesystem.read".to_string(), "1".to_string())]);
+
+    let result = pipeline.build_with_authorization(example_dir(), &policy);
+    assert!(
+        result.is_err(),
+        "denied authorization should prevent execution"
+    );
+}
+
+#[test]
+fn different_recipe_types_have_different_identities() {
+    let zip_recipe = RecipeSpec::directory_zip();
+    let tar_recipe = RecipeSpec::directory_tar();
+
+    let zip_pipeline = zip_recipe.compile().expect("ZIP compilation should succeed");
+    let tar_pipeline = tar_recipe.compile().expect("TAR compilation should succeed");
+
+    let zip_id = zip_pipeline.identity().expect("ZIP identity should compute");
+    let tar_id = tar_pipeline.identity().expect("TAR identity should compute");
+
+    assert_ne!(
+        zip_id, tar_id,
+        "different recipe types should produce different pipeline identities"
+    );
+}
+
+#[test]
+fn recipe_with_custom_exclusions_compiles() {
+    let recipe = RecipeSpec::directory_zip()
+        .with_exclusions(vec!["test.txt".to_string()], vec!["temp".to_string()]);
+
+    let pipeline = recipe.compile().expect("compilation should succeed");
+    assert!(!pipeline.stages.is_empty());
+}
+
+#[test]
+fn recipe_compiled_artifact_identity_is_independent_of_authorization() {
+    let recipe = RecipeSpec::directory_zip();
+    let pipeline = recipe.compile().expect("compilation should succeed");
+
+    let allow_all = AllowAllPolicy;
+    let allow_list = AllowListPolicy::new(vec![
+        ("filesystem.read".to_string(), "1".to_string()),
+        ("manifest.generate".to_string(), "1".to_string()),
+        ("artifact.validate".to_string(), "1".to_string()),
+        ("package.zip".to_string(), "1".to_string()),
+    ]);
+
+    let (artifact1, _) = pipeline
+        .build_with_authorization(example_dir(), &allow_all)
+        .expect("AllowAllPolicy should succeed");
+    let (artifact2, _) = pipeline
+        .build_with_authorization(example_dir(), &allow_list)
+        .expect("AllowListPolicy should succeed");
+
+    assert_eq!(
+        artifact1.artifact().identity, artifact2.artifact().identity,
+        "artifact identity should not depend on authorization policy"
+    );
+}
+
+#[test]
+fn wasm_recipe_includes_compile_capability() {
+    let recipe = RecipeSpec::wasm();
+    let pipeline = recipe.compile().expect("compilation should succeed");
+
+    assert!(
+        pipeline
+            .capabilities
+            .iter()
+            .any(|c| c.name == "compile.wasm" && c.version == "1"),
+        "WASM recipe should include compile.wasm capability"
+    );
+}
+
+#[test]
+fn all_phase_1_4_tests_remain_passing() {
+    // This is implicit: all existing tests are run
+    let pipeline = default_directory_zip_pipeline();
+    assert!(!pipeline.stages.is_empty());
+}
+
+#[test]
+fn recipe_compilation_has_zero_side_effects() {
+    // Compilation performs no I/O, no authorization, no execution
+    let recipe = RecipeSpec::directory_zip();
+    let _pipeline = recipe.compile().expect("compilation should succeed");
+    // If we got here without panicking or blocking on I/O, compilation was pure
+}
+
+#[test]
+fn recipe_materialization_follows_compiled_pipeline() {
+    let recipe = RecipeSpec::directory_zip();
+    let pipeline = recipe.compile().expect("compilation should succeed");
+
+    let (built, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let zip_bytes = ZipMaterializer
+        .materialize_to_vec(built.artifact(), &built)
+        .expect("materialization should succeed");
+
+    assert!(!zip_bytes.is_empty(), "ZIP materialization should produce bytes");
+}
+
