@@ -15,9 +15,7 @@
 // If external record is needed, investigation proves why.
 // If optional, that's a valid architectural outcome.
 
-use artifact::{
-    RecipeSpec, ArtifactSDK, AllowAllPolicy,
-};
+use artifact::{AllowAllPolicy, ArtifactSDK, RecipeSpec};
 use std::path::PathBuf;
 
 fn example_dir() -> PathBuf {
@@ -39,7 +37,9 @@ fn phase10_scenario1_deployment_with_identity_only() {
     // Step 1: Create artifact
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+    let pipeline = recipe_artifact
+        .compile()
+        .expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -83,7 +83,9 @@ fn phase10_scenario1_deployment_what_else_needed() {
 
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+    let pipeline = recipe_artifact
+        .compile()
+        .expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -110,8 +112,8 @@ fn phase10_scenario1_deployment_what_else_needed() {
          Producer claims: {}\n\
          Deployment consumer can now:\n\
          - Know what producer intended\n\
-         - But still can't verify safety (needs external verification)"
-    , artifact.semantic_type().unwrap_or("unknown")
+         - But still can't verify safety (needs external verification)",
+        artifact.semantic_type().unwrap_or("unknown")
     );
 
     assert_eq!(artifact.semantic_type(), Some("web_application"));
@@ -131,7 +133,9 @@ fn phase10_scenario2_registry_with_identity_only() {
     // Step 1: Registry consumer, identity only
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+    let pipeline = recipe_artifact
+        .compile()
+        .expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -175,7 +179,9 @@ fn phase10_scenario2_registry_what_else_needed() {
 
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+    let pipeline = recipe_artifact
+        .compile()
+        .expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -219,7 +225,9 @@ fn phase10_scenario3_end_consumer_with_identity_only() {
     // Step 1: End consumer, identity only
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+    let pipeline = recipe_artifact
+        .compile()
+        .expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -261,7 +269,9 @@ fn phase10_scenario3_end_consumer_what_else_needed() {
 
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+    let pipeline = recipe_artifact
+        .compile()
+        .expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -303,7 +313,9 @@ fn phase10_question1_deployment_without_attestation() {
 
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+    let pipeline = recipe_artifact
+        .compile()
+        .expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -345,7 +357,9 @@ fn phase10_question1_registry_without_evidence() {
 
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+    let pipeline = recipe_artifact
+        .compile()
+        .expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -391,7 +405,9 @@ fn phase10_question1_end_consumer_without_attestation() {
 
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+    let pipeline = recipe_artifact
+        .compile()
+        .expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -438,7 +454,9 @@ fn phase10_question2_different_trust_policies() {
 
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+    let pipeline = recipe_artifact
+        .compile()
+        .expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -496,7 +514,9 @@ fn phase10_question3_shared_attestation() {
 
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+    let pipeline = recipe_artifact
+        .compile()
+        .expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -559,7 +579,9 @@ fn phase10_question4_unverified_claim() {
 
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+    let pipeline = recipe_artifact
+        .compile()
+        .expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -617,7 +639,9 @@ fn phase10_question5_verification_preserves_identity() {
 
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+    let pipeline = recipe_artifact
+        .compile()
+        .expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -657,7 +681,10 @@ fn phase10_question5_verification_preserves_identity() {
         artifact.semantic_type().unwrap_or("unknown")
     );
 
-    assert_eq!(identity_before, identity_after, "identity unchanged by verification");
+    assert_eq!(
+        identity_before, identity_after,
+        "identity unchanged by verification"
+    );
     assert_eq!(artifact.semantic_type(), Some("binary"));
 }
 
@@ -672,7 +699,9 @@ fn phase10_question6_provenance_independent() {
 
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+    let pipeline = recipe_artifact
+        .compile()
+        .expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -713,7 +742,10 @@ fn phase10_question6_provenance_independent() {
         provenance.source_identity
     );
 
-    assert!(artifact_no_claim.semantic_type().is_none(), "no claim by default");
+    assert!(
+        artifact_no_claim.semantic_type().is_none(),
+        "no claim by default"
+    );
 }
 
 #[test]
@@ -723,7 +755,9 @@ fn phase10_question6_evidence_independent() {
 
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+    let pipeline = recipe_artifact
+        .compile()
+        .expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)
@@ -771,7 +805,9 @@ fn phase10_question7_atomicity_requirements() {
 
     let recipe = RecipeSpec::directory_zip();
     let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
-    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+    let pipeline = recipe_artifact
+        .compile()
+        .expect("compilation should succeed");
 
     let (artifact, _) = pipeline
         .build_with_authorization(example_dir(), &AllowAllPolicy)

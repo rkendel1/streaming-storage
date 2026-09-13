@@ -1,5 +1,5 @@
 use crate::core::{
-    sha256_reader, validate_entry_layout, Artifact, ArtifactEntry, ArtifactError, MANIFEST_VERSION,
+    Artifact, ArtifactEntry, ArtifactError, MANIFEST_VERSION, sha256_reader, validate_entry_layout,
 };
 use crate::pipeline::ContentResolver;
 use std::collections::BTreeMap;

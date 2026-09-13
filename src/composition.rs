@@ -1,4 +1,5 @@
-use crate::core::{Artifact, ArtifactError, CreationMetadata, Provenance};
+use crate::core::{Artifact, ArtifactError, CreationMetadata, Provenance, sha256_prefixed};
+use serde::Serialize;
 use std::collections::BTreeMap;
 
 pub struct CompositionInput {
@@ -9,7 +10,7 @@ pub struct CompositionOptions {
     pub collision_policy: CollisionPolicy,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum CollisionPolicy {
     Reject,
 }
@@ -69,61 +70,27 @@ impl CompositionInput {
         let entries: Vec<_> = composed_entries.into_values().collect();
 
         let composition_source = format!("composed[{}]", provenance_sources.join(","));
-
-        let identity = compute_composition_identity(&entries, &composition_source);
+        let pipeline_identity =
+            compute_composition_identity(&provenance_sources, &options.collision_policy)?;
 
         let provenance = Provenance {
             source_identity: composition_source.clone(),
-            pipeline_identity: identity.clone(),
+            pipeline_identity: pipeline_identity.clone(),
             creation_metadata: CreationMetadata::default(),
         };
 
-        let manifest = crate::core::Manifest {
-            manifest_version: 1,
-            artifact_identity: identity.clone(),
-            entries: entries.clone(),
-            pipeline_identity: identity.clone(),
-            capabilities: all_capabilities.clone(),
-            provenance: provenance.clone(),
-        };
-
-        let identity_for_artifact = identity.clone();
-
-        Ok(Artifact {
-            identity: identity_for_artifact.clone(),
-            entries,
-            manifest,
-            pipeline_identity: identity_for_artifact,
-            capabilities: all_capabilities,
-            provenance,
-            lineage: Vec::new(),
-            semantic_declaration: None,
-        })
+        Artifact::from_parts(entries, pipeline_identity, all_capabilities, provenance)
     }
 }
 
 fn compute_composition_identity(
-    entries: &[crate::core::ArtifactEntry],
-    composition_source: &str,
-) -> String {
-    let mut hasher = sha2::Sha256::new();
-
-    use sha2::Digest;
-    use std::fmt::Write as _;
-
-    for entry in entries {
-        hasher.update(entry.path.as_bytes());
-        hasher.update(format!("{:?}", entry.entry_type).as_bytes());
-        hasher.update(entry.content_digest.as_bytes());
-    }
-
-    hasher.update(composition_source.as_bytes());
-
-    let result = hasher.finalize();
-    let mut encoded = String::with_capacity(result.len() * 2 + 7);
-    encoded.push_str("sha256:");
-    for byte in result.iter() {
-        let _ = write!(encoded, "{byte:02x}");
-    }
-    encoded
+    input_artifact_identities: &[String],
+    collision_policy: &CollisionPolicy,
+) -> Result<String, ArtifactError> {
+    let canonical = serde_json::json!({
+        "schema": "artifact_composition.v1",
+        "input_artifact_identities": input_artifact_identities,
+        "collision_policy": collision_policy,
+    });
+    Ok(sha256_prefixed(&serde_json::to_vec(&canonical)?))
 }

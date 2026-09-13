@@ -248,7 +248,9 @@ impl ExecutionEvidence {
         }
 
         if self.authorization_decision.decision == AuthorizationResult::Allowed {
-            if self.artifact_identity.is_empty() && matches!(self.execution_result, ExecutionResult::Success) {
+            if self.artifact_identity.is_empty()
+                && matches!(self.execution_result, ExecutionResult::Success)
+            {
                 return Err("successful execution must reference an artifact".to_string());
             }
 

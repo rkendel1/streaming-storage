@@ -114,7 +114,9 @@ fn phase12_model_test_unified_record() {
     println!("\nE6.2: Revocation ──separate mutable state──> Not in Attestation");
     let e6_2 = test_unified_edge_6_2();
     if e6_2 {
-        println!("  ✓ PASS: Record can include revocation additive (new field, not mutating attestation)");
+        println!(
+            "  ✓ PASS: Record can include revocation additive (new field, not mutating attestation)"
+        );
         edges_passed += 1;
     } else {
         println!("  ✗ FAIL: Model requires mutating attestation for revocation");
@@ -137,7 +139,10 @@ fn phase12_model_test_unified_record() {
     println!("  Edges passed: {}/6 core tests", edges_passed);
     if !edges_failed.is_empty() {
         println!("  Edges failed: {:?}", edges_failed);
-        println!("  CONSTRAINT: {:?}", format_constraint_unified(&edges_failed));
+        println!(
+            "  CONSTRAINT: {:?}",
+            format_constraint_unified(&edges_failed)
+        );
     }
     if edges_passed == 6 {
         println!("  STATUS: ✓ PASSES core representation tests");
@@ -229,7 +234,10 @@ fn phase12_model_test_modular_records() {
     println!("  Edges passed: {}/6 core tests", edges_passed);
     if !edges_failed.is_empty() {
         println!("  Edges failed: {:?}", edges_failed);
-        println!("  CONSTRAINT: {:?}", format_constraint_modular(&edges_failed));
+        println!(
+            "  CONSTRAINT: {:?}",
+            format_constraint_modular(&edges_failed)
+        );
     }
     if edges_passed == 6 {
         println!("  STATUS: ✓ PASSES core representation tests");
@@ -321,7 +329,10 @@ fn phase12_model_test_contextual_records() {
     println!("  Edges passed: {}/6 core tests", edges_passed);
     if !edges_failed.is_empty() {
         println!("  Edges failed: {:?}", edges_failed);
-        println!("  CONSTRAINT: {:?}", format_constraint_contextual(&edges_failed));
+        println!(
+            "  CONSTRAINT: {:?}",
+            format_constraint_contextual(&edges_failed)
+        );
     }
     if edges_passed == 6 {
         println!("  STATUS: ✓ PASSES core representation tests");
