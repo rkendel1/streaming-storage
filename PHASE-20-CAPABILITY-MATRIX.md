@@ -162,12 +162,24 @@ Either choice is acceptable; the current implementation is not broken, but the s
 
 ## Conclusion
 
-The Artifact Kernel has **43 proven capabilities**. Core identity, transformation, composition, persistence, recovery, and materialization are production-proven.
+The Artifact Kernel has **43 proven capabilities** and **2 unresolved boundary questions**.
 
-Two subsystems (**authorization/evidence**) are implemented but not integrated into tests. Three capabilities (**claims/attestations/revocation**) are intentionally external.
+**Proven capabilities** (production code + production test):
+- Core identity, transformation, composition, persistence, recovery, materialization
+- All behave as documented and validated by comprehensive tests
+- No correctness defects found
 
-One semantic boundary (**multi-input lineage**) is correct but underspecified—composition works deterministically, but the distinction between provenance and lineage for multi-artifact operations should be clarified.
+**Unresolved boundary questions:**
+1. **Authorization (OPEN):** `CapabilityPolicy` and `ExecutionEvidence` are defined and exported, but are never exercised in production test paths. This creates ambiguity about whether authorization is kernel-owned (requiring integration tests and enforcement) or external (requiring documentation boundary).
 
-No correctness defects exist. All proven capabilities are sound.
+2. **Multi-input lineage (SEMANTIC):** Composition correctly accepts multiple inputs and records them in provenance. However, the semantic distinction between provenance (creation source identity) and lineage (transformation derivation) should be explicitly documented. This is not a correctness issue—composition works correctly—but it should be clarified for external users.
 
-The kernel is **coherent and production-ready**. Remaining work is usability, integration testing, and deferred external subsystems.
+**Intentionally external:**
+- Claims, attestations, revocation infrastructure (3 capabilities)
+- Registry, database, distributed storage
+- Trust decisions, consumer policy
+
+**What Phase 21 must do:**
+Resolve the two boundary questions through audit and documentation, not by building new infrastructure. The decisions are architectural, not implementation.
+
+Once Phase 21 clarifies these boundaries, the kernel is suitable for external integration. No additional core architecture is needed.

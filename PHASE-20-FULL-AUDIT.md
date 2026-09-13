@@ -6,18 +6,27 @@ This is the comprehensive evidence-based audit of the Artifact Engine after Phas
 
 ## Executive Summary
 
-The Artifact Engine kernel is **semantically complete and production-proven**. All core capabilities—artifact construction, deterministic identity, transformation, composition, persistence, recovery, and materialization—are implemented in production code and validated by production tests.
+The Artifact Engine kernel is **production-proven but boundary-ambiguous**. All core capabilities—artifact construction, deterministic identity, transformation, composition, persistence, recovery, and materialization—are implemented in production code and validated by production tests.
 
 **Current state:**
 - 43 proven capabilities backed by production code + test evidence
-- 2 implemented subsystems not integrated into tests (authorization, evidence)
+- 2 open boundary questions (authorization ownership, composition/lineage semantics)
 - 3 intentionally external subsystems (claims, attestations, revocation)
-- 1 semantic boundary needing clarification (multi-input lineage)
 - 0 correctness defects found
 
-**Kernel completeness:** The artifact kernel is semantically complete. No additional core architecture is needed.
+**Kernel status:**
+- Artifact identity: PROVEN
+- Artifact lifecycle: PROVEN
+- Local durability: PROVEN
+- Composition: PROVEN
+- Materialization: PROVEN
+- Architectural integrity: PROVEN
+- Authorization boundary: OPEN (types exist but not integrated into production paths)
+- Multi-input lineage semantics: OPEN (provenance vs. transformation distinction needs clarification)
 
-**Next phase:** Move from architectural research to production usability and integration testing. The recommended next work is **Phase 21: Authorization Integration & API Clarification**, which will document and integrate the authorization model and clarify semantic boundaries.
+**What Phase 20 establishes:** The kernel works correctly. The remaining work is not architecture—it is boundary clarification.
+
+**Next phase:** Before productization, Phase 21 must answer four specific questions that determine where the kernel stops and external systems begin.
 
 ---
 
@@ -317,18 +326,26 @@ Phase 21 should clarify this boundary in documentation and possibly introduce a 
 
 ---
 
-## Product Readiness Assessment
+## Kernel Readiness Assessment
 
 | Dimension | Assessment | Notes |
 | --- | --- | --- |
-| Semantic coherence | **EXCELLENT** | Core model is clear, internally consistent, fully specified |
-| Implementation completeness | **COMPLETE** | All core capabilities are implemented |
-| Production evidence | **EXCELLENT** | 43 capabilities proven by production tests |
-| API usability | **GOOD** | Public API is clear; semantic boundaries could be better documented |
-| Portability | **EXCELLENT** | Identity is environment-independent; artifacts are portable |
-| External integration readiness | **GOOD** | Boundaries are clear; authorization/policy are external-ready |
+| Semantic coherence | **EXCELLENT** | Core model is clear, internally consistent, evidence-backed |
+| Implementation completeness | **COMPLETE** | All core capabilities are implemented and proven |
+| Production evidence | **EXCELLENT** | 43 capabilities validated by production tests |
+| Architectural integrity | **EXCELLENT** | No hidden state, implicit registries, or bypass paths |
+| Identity stability & portability | **EXCELLENT** | Environment-independent; proven across process/storage boundaries |
+| Core lifecycle | **PROVEN** | Source→pipeline→artifact→transform/compose→persist→recover→materialize fully validated |
+| Boundary clarity | **INCOMPLETE** | Authorization ownership and composition/lineage semantics need clarification |
+| Public API documentation | **GOOD** | Kernel types are clear; external boundary needs explicit documentation |
 
-**Overall: PRODUCTION-READY. Kernel is complete and proven. Remaining work is integration, documentation, and usability.**
+**Overall: ARTIFACT KERNEL PROVEN. Suitable for external integration once boundary questions are resolved.**
+
+The kernel is not production-ready for external consumers until Phase 21 clarifies:
+1. Whether authorization belongs to the kernel or is external
+2. The precise semantic distinction between transformation lineage and composition provenance
+3. Which current types are public contracts versus internal APIs
+4. What an external application actually needs to integrate without duplicating semantics
 
 ---
 
@@ -375,60 +392,89 @@ Tests failed: 0
 
 ---
 
-## Next Implementation Phase Recommendation
+## Next Phase Recommendation
 
-**Phase 21: Authorization Integration & API Clarification**
+**Phase 21: Kernel Boundary & Public Contract Audit**
 
-### Why This Is the Next Priority
+### Purpose
 
-The kernel is architecturally complete. All remaining work is integration and clarity:
+The kernel is proven and correct. The remaining work is not architecture—it is boundary clarification. Phase 21 must settle ambiguities before external systems integrate with the kernel.
 
-1. **Authorization is defined but not integrated.** Clarify whether it should be kernel-enforced or external. Add tests or documentation accordingly.
+### The Four Questions Phase 21 Must Answer
 
-2. **Multi-input lineage semantics should be clarified.** Document the distinction between provenance (creation) and lineage (transformation). Consider whether a CompositionRecord type is needed.
+1. **Does authorization belong to the Artifact Kernel?**
+   - `CapabilityPolicy` and `ExecutionEvidence` are defined but not integrated into production paths
+   - Decision required: Kernel-owned (with production tests) or external (remove from kernel, move to integration layer)?
 
-3. **API documentation should be sharpened.** Public wrappers (PublicArtifact, ApplicationArtifact) and external boundaries should be documented.
+2. **What is the precise semantic difference between transformation lineage and composition provenance?**
+   - Transformation: Single input → new artifact via TransformationRecord
+   - Composition: Multiple inputs → new artifact via provenance source_identity
+   - Decision required: Document the distinction as correct, or introduce a new lineage record type?
 
-### What Phase 21 Should NOT Do
+3. **Which current types are public kernel contracts versus supporting/internal APIs?**
+   - Identify which types external applications should depend on
+   - Identify which are implementation details
 
-- Do NOT add new architecture (registries, databases, trust systems)
-- Do NOT implement claims/attestations/revocation
-- Do NOT change core identity computation
-- Do NOT add new storage backends
+4. **What does an external application actually need to integrate with the kernel without duplicating its semantics?**
+   - Define extension points: custom transforms, materializers, content resolvers
+   - Define non-extension points: do not re-implement identity, persistence, recovery, composition
 
-### What Phase 21 Should Do
+### What Phase 21 Must NOT Build
 
-1. **Integrate authorization into test paths** (either tests or documentation)
-2. **Clarify multi-input lineage semantics** with documentation and examples
-3. **Document API boundaries** (public wrappers, external vs. kernel)
-4. **Add real-world integration examples** (e.g., how to attach external claims)
+Do NOT add:
+- Registry or discovery system
+- Trust service or PKI
+- Attestation or revocation system
+- Policy engine or authorization enforcement (until boundary question is answered)
+- Distributed storage or synchronization
+- Multi-parent lineage abstraction
+- New execution framework or deployment system
+- Adapter framework or integration layer
+
+Unless the boundary audit finds an actual kernel defect requiring one. It should not.
 
 ### Completion Criterion
 
-Phase 21 is complete when external users can read the documentation and understand:
-- When to use which public API
-- Where to extend (external transforms, materializers, content resolvers)
-- How authorization works (kernel vs. external)
-- How composition and transformation differ semantically
+Phase 21 is complete when:
+1. Authorization boundary is explicitly decided and documented
+2. Composition/lineage semantics are documented with examples
+3. Public API surface is clearly defined
+4. External integration requirements are specified
+5. All decisions are evidence-backed (not philosophical)
+
+External users should then be able to answer:
+- "Which types should I import from the kernel?"
+- "Where do I extend the kernel?"
+- "What does the kernel guarantee about my data?"
+- "What must I implement myself?"
 
 ---
 
 ## Conclusion
 
-The Artifact Engine kernel is **complete, sound, and production-proven**. 
+The Artifact Engine kernel is **proven, sound, and architecturally complete**. No correctness defects were found.
 
-**Core claims validated:**
-- ✓ Deterministic identity from content and pipeline
-- ✓ Immutable artifact model
-- ✓ Single-input transformations with lineage
-- ✓ Multi-artifact composition with deterministic identity
-- ✓ Durable persistence and recovery
-- ✓ No hidden state or implicit registries
-- ✓ Environment-independent, portable identity
+**Evidence-backed claims:**
+- ✓ Deterministic identity from content and pipeline (proven across processes/stores)
+- ✓ Immutable artifact model (input artifacts are never mutated by operations)
+- ✓ Single-input transformations with observable lineage (TransformationRecord not identity-bearing)
+- ✓ Multi-artifact composition with deterministic identity (ordering and collision policy significant)
+- ✓ Durable persistence and recovery with validation (corruption detection, identity revalidation)
+- ✓ No hidden state or implicit registries (storage is explicit, no discovery mechanism)
+- ✓ Environment-independent, portable identity (artifacts are stable across processes/stores)
 
-**No correctness defects found.** 
+**Status after Phase 20:**
+- Kernel implementation: COMPLETE
+- Kernel correctness: PROVEN
+- Kernel architecture: SOUND (no defects, no hidden state)
+- Kernel boundaries: OPEN (two questions remain for Phase 21)
 
-The next phase should move from architectural research to production integration and documentation. The kernel is ready for external consumers to build systems on top of it.
+**Transition point:**
+Phase 1–19 asked: "What should Artifact Engine be?"
+Phase 20 answered: "What does Artifact Engine actually do?"
+Phase 21 must answer: "Where exactly does the kernel stop?"
+
+Once Phase 21 resolves the boundary questions, external consumers can confidently integrate with the kernel without duplicating its semantics or discovering hidden behavior.
 
 ---
 
