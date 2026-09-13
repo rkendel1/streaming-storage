@@ -1,9 +1,11 @@
 use artifact::{
-    Artifact, ArtifactEntry, Capability, CreationMetadata, EntryType, PipelineSpec, Provenance,
-    SelectStageSpec, SourceSpec, StageSpec, ZipMaterialization, ZipMaterializer,
-    default_directory_zip_pipeline, normalize_relative_path,
+    Artifact, ArtifactEntry, Capability, ContentResolver, CreationMetadata, EntryType,
+    MaterializationResult, MemoryContentResolver, PipelineSpec, Provenance, SelectStageSpec,
+    SourceSpec, StageSpec, TarMaterializer, ZipMaterializer, default_directory_zip_pipeline,
+    normalize_relative_path,
 };
 use sha2::Digest;
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Cursor, Read};
 use std::path::PathBuf;
@@ -248,7 +250,9 @@ fn zip_materialization_reports_digest_without_rereading_output() {
     let bytes = fs::read(&output_path).expect("zip bytes should be readable");
     assert_eq!(
         report,
-        ZipMaterialization {
+        MaterializationResult {
+            artifact_identity: built.artifact().identity.clone(),
+            materializer_format: "zip".to_string(),
             output_digest: digest_for_bytes(&bytes),
             size_bytes: bytes.len() as u64,
         }
@@ -338,6 +342,166 @@ fn symlinks_are_rejected() {
     assert!(error.to_string().contains("symlinks are rejected"));
 }
 
+#[test]
+fn format_independence_same_artifact_produces_different_digests() {
+    let built = default_directory_zip_pipeline()
+        .build_from_directory(example_dir())
+        .expect("pipeline should build example");
+    let artifact = built.artifact();
+
+    let zip_result = ZipMaterializer
+        .materialize_to_vec(artifact, &built)
+        .expect("zip materialization should succeed");
+    let tar_result = TarMaterializer
+        .materialize_to_vec(artifact, &built)
+        .expect("tar materialization should succeed");
+
+    assert_ne!(
+        zip_result, tar_result,
+        "ZIP and TAR should produce different bytes"
+    );
+    let zip_digest = digest_for_bytes(&zip_result);
+    let tar_digest = digest_for_bytes(&tar_result);
+    assert_ne!(zip_digest, tar_digest, "ZIP and TAR should have different digests");
+}
+
+#[test]
+fn format_independence_artifact_identity_is_shared() {
+    let built = default_directory_zip_pipeline()
+        .build_from_directory(example_dir())
+        .expect("pipeline should build example");
+    let artifact = built.artifact();
+    let artifact_identity = artifact.identity.clone();
+
+    let output_dir = TempDir::new().expect("temp dir should be created");
+    let zip_path = output_dir.path().join("example.zip");
+    let tar_path = output_dir.path().join("example.tar");
+
+    let zip_result = ZipMaterializer
+        .materialize_to_path(artifact, &built, &zip_path)
+        .expect("zip should materialize");
+    let tar_result = TarMaterializer
+        .materialize_to_path(artifact, &built, &tar_path)
+        .expect("tar should materialize");
+
+    assert_eq!(zip_result.artifact_identity, artifact_identity);
+    assert_eq!(tar_result.artifact_identity, artifact_identity);
+    assert_eq!(
+        zip_result.artifact_identity, tar_result.artifact_identity,
+        "both materializations should have same logical artifact identity"
+    );
+    assert_ne!(
+        zip_result.output_digest, tar_result.output_digest,
+        "physical representations should have different digests"
+    );
+}
+
+#[test]
+fn memory_content_resolver_enables_source_independence() {
+    let built = default_directory_zip_pipeline()
+        .build_from_directory(example_dir())
+        .expect("pipeline should build example");
+    let artifact = built.artifact().clone();
+
+    let mut contents = BTreeMap::new();
+    for entry in &artifact.entries {
+        let path = entry.path.as_str();
+        let bytes = fs::read(example_dir().join(path)).expect("source file should be readable");
+        contents.insert(path.to_string(), bytes);
+    }
+
+    let memory_resolver = MemoryContentResolver::new(contents);
+    let zip_from_memory = ZipMaterializer
+        .materialize_to_vec(&artifact, &memory_resolver)
+        .expect("memory materialization should succeed");
+
+    let zip_from_source = ZipMaterializer
+        .materialize_to_vec(&artifact, &built)
+        .expect("source materialization should succeed");
+
+    assert_eq!(zip_from_memory, zip_from_source);
+}
+
+#[test]
+fn tar_materialization_produces_deterministic_output() {
+    let built = default_directory_zip_pipeline()
+        .build_from_directory(example_dir())
+        .expect("pipeline should build example");
+    let artifact = built.artifact();
+
+    let first = TarMaterializer
+        .materialize_to_vec(artifact, &built)
+        .expect("first tar should build");
+    let second = TarMaterializer
+        .materialize_to_vec(artifact, &built)
+        .expect("second tar should build");
+
+    assert_eq!(first, second, "TAR output should be deterministic");
+}
+
+#[test]
+fn tar_materialization_to_path_returns_correct_result() {
+    let built = default_directory_zip_pipeline()
+        .build_from_directory(example_dir())
+        .expect("pipeline should build example");
+    let output_dir = TempDir::new().expect("temp dir should be created");
+    let output_path = output_dir.path().join("example.tar");
+
+    let result = TarMaterializer
+        .materialize_to_path(built.artifact(), &built, &output_path)
+        .expect("tar should materialize to disk");
+
+    assert_eq!(result.materializer_format, "tar");
+    assert_eq!(result.artifact_identity, built.artifact().identity);
+    let bytes = fs::read(&output_path).expect("tar bytes should be readable");
+    assert_eq!(result.output_digest, digest_for_bytes(&bytes));
+    assert_eq!(result.size_bytes, bytes.len() as u64);
+}
+
+#[test]
+fn provenance_changes_do_not_alter_artifact_identity() {
+    let artifact = Artifact::from_parts(
+        vec![ArtifactEntry {
+            path: "app.js".to_string(),
+            entry_type: EntryType::File,
+            size: 5,
+            content_digest: digest_for("hello"),
+        }],
+        "sha256:pipeline".to_string(),
+        vec![Capability::new("package.zip", "1")],
+        Provenance {
+            source_identity: "sha256:source".to_string(),
+            pipeline_identity: "sha256:pipeline".to_string(),
+            creation_metadata: CreationMetadata::default(),
+        },
+    )
+    .expect("artifact should be valid");
+
+    let artifact_with_timestamp = Artifact::from_parts(
+        vec![ArtifactEntry {
+            path: "app.js".to_string(),
+            entry_type: EntryType::File,
+            size: 5,
+            content_digest: digest_for("hello"),
+        }],
+        "sha256:pipeline".to_string(),
+        vec![Capability::new("package.zip", "1")],
+        Provenance {
+            source_identity: "sha256:source".to_string(),
+            pipeline_identity: "sha256:pipeline".to_string(),
+            creation_metadata: CreationMetadata {
+                created_at: Some("2026-09-13T00:00:00Z".to_string()),
+            },
+        },
+    )
+    .expect("artifact with timestamp should be valid");
+
+    assert_eq!(
+        artifact.identity, artifact_with_timestamp.identity,
+        "artifact identity should not change with creation_metadata"
+    );
+}
+
 fn example_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("example")
 }
@@ -385,8 +549,8 @@ impl StaticResolver {
     }
 }
 
-impl artifact::EntryContentResolver for StaticResolver {
-    fn open(&self, path: &str) -> Result<Box<dyn Read>, artifact::ArtifactError> {
+impl ContentResolver for StaticResolver {
+    fn resolve(&self, path: &str) -> Result<Box<dyn Read>, artifact::ArtifactError> {
         let bytes = self
             .entries
             .get(path)

@@ -1,6 +1,8 @@
 # streaming-storage
 
-`artifact` is a Phase 1 proof of an artifact pipeline where the **logical artifact** is independent of its physical representation.
+`artifact` is a proof of an artifact system where the **logical artifact** is independent of its physical representation.
+
+## Architecture overview
 
 ```text
                  Pipeline
@@ -12,34 +14,50 @@
         ↓
    Logical Artifact
         │
-   ┌────┼─────┐
-   ↓    ↓     ↓
-  ZIP  TAR   OCI
+        ├── ContentResolver
+        │       │
+        │   ┌───┼────┐
+        │   ↓   ↓    ↓
+        │  FS  Mem  Future
+        │
+   ┌────┼────────┐
+   ↓    ↓        ↓
+  ZIP  TAR      Future
 ```
 
-Only ZIP works today. The architecture keeps ZIP at the edge so new materializers can be added without changing the artifact model.
+## Phase 2 status (current)
 
-## Phase 1 scope
+**What Phase 2 proves:**
 
-Implemented vertical slice:
+One logical artifact can have multiple independent materializations with different physical digests.
 
 ```text
-directory
-   ↓
-select
-   ↓
-manifest
-   ↓
-validate
-   ↓
-logical artifact
-   ↓
-ZIP materializer
-   ↓
-deterministic ZIP
+Artifact
+  identity: sha256:AAAA
+  entries: 3 files
+  size: 195 bytes
+       │
+       ├─→ ZIP Materializer
+       │       output_digest: sha256:BBBB
+       │       size: 511 bytes
+       │
+       └─→ TAR Materializer
+               output_digest: sha256:CCCC
+               size: 4096 bytes
 ```
 
-Explicit non-goals for this repository state: AppPort, `.app`, WASM execution, remote execution, OCI, TAR, encryption, signatures, databases, cloud storage, AI-generated pipelines, and platform-specific packaging.
+AAAA ≠ BBBB ≠ CCCC: logical identity is distinct from physical representations.
+
+**Phase 2 scope:**
+
+Implemented:
+- ContentResolver as first-class abstraction (filesystem and in-memory)
+- MemoryContentResolver proving source independence
+- TAR materializer with deterministic output
+- MaterializationResult separating artifact_identity from output_digest
+- 21 integration tests covering both Phase 1 and Phase 2
+
+Explicit non-goals: AppPort, `.app`, WASM execution, remote execution, OCI, encryption, signatures, databases, cloud storage, AI-generated pipelines, platform-specific packaging, delta encoding, CAS, and signing.
 
 ## Repository structure
 
@@ -125,6 +143,47 @@ Phase 1 rules:
 - paths longer than 4096 bytes are rejected
 
 Rejected paths include `../foo`, `foo/../bar`, `/absolute/path`, and Windows-style absolute paths.
+
+## Phase 3 recommendation
+
+Phase 2 has proven the architectural thesis:
+- Logical artifacts are independent of their physical representation ✓
+- Multiple materializers can coexist without changing the Artifact model ✓
+- Content resolution is decoupled from the artifact model ✓
+- Artifact identity is separate from materialization identity ✓
+
+**Phase 3 should introduce declarative capability pipelines.**
+
+The original FFmpeg analogy becomes powerful here:
+```text
+artifact
+  ├─→ select (filter)
+  ├─→ manifest (capture)
+  ├─→ validate (probe)
+  └─→ materialize (encode)
+```
+
+Phase 3 next steps (recommended but not implemented):
+- transform stage (structural changes: rename, recompose)
+- redact stage (selective content removal)
+- generate stage (derived content synthesis)
+- authorize stage (capability attestation)
+- attest stage (integrity signing)
+- index stage (searchable metadata)
+- cache stage (content-addressed storage)
+
+Each stage:
+- takes Artifact in, produces Artifact out
+- transforms logical structure without coupling to materializers
+- supports streaming for large artifacts
+- maintains deterministic identity
+
+Non-goals (still out of scope):
+- OCI image production
+- Remote execution or cloud services
+- Signature/encryption algorithms
+- Database persistence
+- AI pipeline generation
 
 ## Manifest specification
 
@@ -234,17 +293,82 @@ Phase 1 decisions:
 
 This is an explicit security baseline, not a fake authorization system.
 
-## CLI
+## Identity model (Phase 2)
+
+### Artifact identity
+
+The logical artifact identity includes:
+- normalized entries (path, type, size, content_digest)
+- pipeline identity
+- capabilities
+- provenance source identity
+
+It **explicitly excludes**:
+- creation_metadata (timestamps, hostnames, PIDs, etc.)
+- materializer format
+- physical representation
+
+### Materialization identity
+
+Each physical representation has a separate identity:
+- output_digest: sha256(physical bytes)
+
+This is fundamentally different from artifact_identity.
+
+### Content resolver
+
+The ContentResolver abstraction decouples entry content from the artifact model:
+
+```rust
+pub trait ContentResolver: Send + Sync {
+    fn resolve(&self, path: &str) -> Result<Box<dyn Read>, ArtifactError>;
+}
+```
+
+Two implementations:
+- **SourceBackedArtifact**: resolves from original filesystem paths
+- **MemoryContentResolver**: resolves from in-memory BTreeMap
+
+This proves:
+- sources can be deleted after artifact creation (memory resolver persists)
+- artifact and source are separate concerns
+- new resolvers can be added without changing Artifact
+
+## Materializers (Phase 2)
+
+### ZIP materializer
+
+Deterministic ZIP with:
+- stored (no compression)
+- fixed timestamps (epoch)
+- fixed permissions (0o644)
+- sorted entries by path
+
+### TAR materializer
+
+Deterministic TAR with:
+- GNU tar format
+- fixed timestamps (default)
+- sorted entries by path
+
+Both materializers:
+- validate entry layout
+- verify content digest during materialization
+- reject content drift
+- produce identical output when run twice
+
+## CLI (Phase 2)
 
 Commands:
 
 ```bash
 cargo run --bin artifact -- inspect ./example
 cargo run --bin artifact -- manifest ./example
-cargo run --bin artifact -- build ./example --output /tmp/example.zip
+cargo run --bin artifact -- build ./example --output /tmp/example.zip --format zip
+cargo run --bin artifact -- build ./example --output /tmp/example.tar --format tar
 ```
 
-Example build output:
+Example output:
 
 ```text
 Pipeline:
@@ -254,13 +378,27 @@ Pipeline:
   → validate
   → zip
 Artifact:
-  id: sha256:...
+  id: sha256:8d36505d1a3fedb0d94f26b4d83160cf9954a9f73a89f2abaeb4effe77dab0a1
   entries: 3
-  size: 121
+  size: 195
 Output:
   format: zip
-  digest: sha256:...
+  digest: sha256:1b76267333b429145186e2b282db8d71fa6a88f73098521865cc41cea05c2573
+  size: 511
+  path: /tmp/example.zip
 ```
+
+Same artifact with tar:
+
+```text
+Output:
+  format: tar
+  digest: sha256:1b72aa7cb25a73f73523a85f8afea9e9924377958ab914c5fe397a0f6234a554
+  size: 4096
+  path: /tmp/example.tar
+```
+
+Note: artifact id is identical, output digests differ.
 
 ## Example fixture
 
@@ -271,8 +409,9 @@ Output:
 
 ## Tests
 
-The test suite covers:
+21 integration tests covering:
 
+**Phase 1 (15 tests):**
 - stage execution order
 - file selection and exclusion
 - path safety
@@ -283,3 +422,15 @@ The test suite covers:
 - deterministic ZIP output
 - logical artifact inspection without ZIP materialization
 - conflicting entry rejection
+- content drift detection
+- symlink rejection
+
+**Phase 2 (6 new tests):**
+- format independence: same artifact produces different digests in ZIP vs TAR
+- artifact identity shared across materializers
+- memory content resolver enables source independence
+- TAR materialization determinism
+- TAR result reporting
+- provenance metadata does not alter artifact identity
+
+All tests use fixture directories and determinism verification to prove architectural properties.

@@ -77,12 +77,14 @@ impl StageSpec {
 #[serde(rename_all = "snake_case")]
 pub enum MaterializerSpec {
     Zip,
+    Tar,
 }
 
 impl MaterializerSpec {
     pub fn label(&self) -> &'static str {
         match self {
             Self::Zip => "zip",
+            Self::Tar => "tar",
         }
     }
 }
@@ -263,8 +265,18 @@ pub fn default_directory_zip_pipeline() -> PipelineSpec {
     }
 }
 
+pub trait ContentResolver: Send + Sync {
+    fn resolve(&self, path: &str) -> Result<Box<dyn Read>, ArtifactError>;
+}
+
 pub trait EntryContentResolver {
     fn open(&self, path: &str) -> Result<Box<dyn Read>, ArtifactError>;
+}
+
+impl<T: ContentResolver + ?Sized> EntryContentResolver for T {
+    fn open(&self, path: &str) -> Result<Box<dyn Read>, ArtifactError> {
+        self.resolve(path)
+    }
 }
 
 #[derive(Debug)]
@@ -284,8 +296,8 @@ impl SourceBackedArtifact {
     }
 }
 
-impl EntryContentResolver for SourceBackedArtifact {
-    fn open(&self, path: &str) -> Result<Box<dyn Read>, ArtifactError> {
+impl ContentResolver for SourceBackedArtifact {
+    fn resolve(&self, path: &str) -> Result<Box<dyn Read>, ArtifactError> {
         let source_path = self
             .contents
             .get(path)
@@ -506,4 +518,26 @@ fn hash_file(path: &Path) -> Result<String, ArtifactError> {
         let _ = write!(encoded, "{byte:02x}");
     }
     Ok(encoded)
+}
+
+#[derive(Debug)]
+pub struct MemoryContentResolver {
+    entries: BTreeMap<String, Vec<u8>>,
+}
+
+impl MemoryContentResolver {
+    pub fn new(entries: BTreeMap<String, Vec<u8>>) -> Self {
+        Self { entries }
+    }
+}
+
+impl ContentResolver for MemoryContentResolver {
+    fn resolve(&self, path: &str) -> Result<Box<dyn Read>, ArtifactError> {
+        let bytes = self
+            .entries
+            .get(path)
+            .cloned()
+            .ok_or_else(|| ArtifactError::Materialization(format!("missing content for {path}")))?;
+        Ok(Box::new(std::io::Cursor::new(bytes)))
+    }
 }

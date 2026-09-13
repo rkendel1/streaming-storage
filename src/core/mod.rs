@@ -164,6 +164,14 @@ pub struct Artifact {
     pub provenance: Provenance,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct MaterializationResult {
+    pub artifact_identity: String,
+    pub materializer_format: String,
+    pub output_digest: String,
+    pub size_bytes: u64,
+}
+
 impl Artifact {
     pub fn from_parts(
         entries: Vec<ArtifactEntry>,
