@@ -1,0 +1,10 @@
+[package]
+name = "artifact-consumer-proof"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+artifact = { path = "../.." }
+tempfile = "3"
+
+[dev-dependencies]
