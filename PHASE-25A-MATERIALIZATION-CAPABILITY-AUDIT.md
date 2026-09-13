@@ -36,12 +36,12 @@ We reject:
 
 ## Evidence
 
-- ZIP/TAR materializers are public production capabilities (`src/lib.rs`, `src/materializers/*`).
+- ZIP/TAR materializers are exposed on the public `artifact` crate API surface.
 - Materialization links back to logical identity through `MaterializationResult.artifact_identity`.
 - New Phase 25A tests prove:
   - stable logical identity across ZIP and TAR outputs,
   - deterministic materialization per output type,
-  - output-agnostic logical artifact model (no output-typed artifact variants).
+  - format-specific materialization reporting without changing logical artifact identity.
 
 ## Conclusions
 
