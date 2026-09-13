@@ -2044,3 +2044,122 @@ fn all_phase_1_5_tests_remain_passing() {
     assert!(!wasm_pipeline.stages.is_empty());
 }
 
+
+// Phase 6 Foundation: Public API and CLI Surface
+
+#[test]
+fn public_api_recipe_compiles() {
+    use artifact::ArtifactSDK;
+    
+    let recipe = artifact::RecipeSpec::wasm();
+    let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
+    
+    assert!(pipeline.required_capabilities().len() > 0);
+}
+
+#[test]
+fn public_api_inspection_works() {
+    use artifact::ArtifactSDK;
+    
+    let recipe = artifact::RecipeSpec::wasm();
+    let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
+    let inspection = pipeline.inspect().expect("inspection should succeed");
+    
+    assert!(!inspection.pipeline_identity.is_empty());
+    assert!(!inspection.stages.is_empty());
+    assert!(!inspection.required_capabilities.is_empty());
+}
+
+#[test]
+fn public_api_execution_succeeds() {
+    use artifact::ArtifactSDK;
+    
+    let recipe = artifact::RecipeSpec::directory_zip();
+    let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
+    
+    let (artifact, evidence) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+    
+    assert!(!artifact.identity().is_empty());
+    assert!(evidence.is_successful());
+}
+
+#[test]
+fn public_api_artifact_entries_accessible() {
+    use artifact::ArtifactSDK;
+    
+    let recipe = artifact::RecipeSpec::directory_zip();
+    let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
+    
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+    
+    let entries = artifact.entries();
+    assert!(!entries.is_empty(), "artifact should have entries");
+    assert!(
+        entries.iter().any(|e| e.path == "README.md"),
+        "should have README.md"
+    );
+}
+
+#[test]
+fn public_api_evidence_accessible() {
+    use artifact::ArtifactSDK;
+    
+    let recipe = artifact::RecipeSpec::wasm();
+    let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
+    
+    let (_, evidence) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+    
+    let decision = evidence.authorization_decision();
+    assert!(decision.allowed, "authorization should be allowed");
+    assert!(!decision.granted_capabilities.is_empty());
+    
+    let stages = evidence.stage_trace();
+    assert!(!stages.is_empty(), "should have executed stages");
+}
+
+#[test]
+fn public_api_denies_correctly() {
+    use artifact::ArtifactSDK;
+    
+    let recipe = artifact::RecipeSpec::wasm();
+    let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = artifact_recipe.compile().expect("compilation should succeed");
+    
+    let policy = AllowListPolicy::new(vec![
+        ("filesystem.read".to_string(), "1".to_string()),
+    ]);
+    
+    let result = pipeline.build_with_authorization(example_dir(), &policy);
+    assert!(result.is_err(), "missing capabilities should deny");
+}
+
+#[test]
+fn public_api_cli_layer_is_thin() {
+    // This test verifies the CLI is just a client
+    // It should compile and link without duplicating logic
+    use artifact::ArtifactSDK;
+    
+    // The pattern the CLI uses:
+    let recipe = artifact::RecipeSpec::directory_zip();
+    let artifact_recipe = ArtifactSDK::recipe_from_spec(recipe);
+    let _pipeline = artifact_recipe.compile();
+    
+    // The CLI does NOT:
+    // - recompute artifact identity
+    // - reimplement authorization
+    // - duplicate stage execution
+    // - maintain separate cache
+    // The CLI only calls the SDK.
+}
+

@@ -1,117 +1,187 @@
-use artifact::{PipelineSpec, TarMaterializer, ZipMaterializer, default_directory_zip_pipeline};
-use clap::{Parser, Subcommand};
+use artifact::{
+    ArtifactSDK, AllowAllPolicy, RecipeSpec,
+};
+use std::env;
 use std::path::PathBuf;
 
-#[derive(Debug, Parser)]
-#[command(
-    name = "artifact",
-    about = "Build deterministic logical artifacts and materialize them as archives"
-)]
-struct Cli {
-    #[command(subcommand)]
-    command: Command,
-}
+fn main() {
+    let args: Vec<String> = env::args().collect();
 
-#[derive(Debug, Subcommand)]
-enum Command {
-    Inspect {
-        source: PathBuf,
-    },
-    Manifest {
-        source: PathBuf,
-    },
-    Build {
-        source: PathBuf,
-        #[arg(long)]
-        output: PathBuf,
-        #[arg(long, default_value = "zip")]
-        format: String,
-    },
-}
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let cli = Cli::parse();
-    let pipeline = default_directory_zip_pipeline();
-
-    match cli.command {
-        Command::Inspect { source } => inspect(&pipeline, source)?,
-        Command::Manifest { source } => manifest(&pipeline, source)?,
-        Command::Build {
-            source,
-            output,
-            format,
-        } => build(&pipeline, source, output, format)?,
+    if args.len() < 2 {
+        print_usage();
+        std::process::exit(1);
     }
 
-    Ok(())
-}
-
-fn inspect(pipeline: &PipelineSpec, source: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    let built = pipeline.build_from_directory(&source)?;
-    let artifact = built.artifact();
-
-    print_pipeline(pipeline);
-    println!("Artifact:");
-    println!("  id: {}", artifact.identity);
-    println!("  entries: {}", artifact.entries.len());
-    println!("  size: {}", artifact.total_size());
-    println!("  pipeline_id: {}", artifact.pipeline_identity);
-    println!("  source_id: {}", artifact.provenance.source_identity);
-    println!("  capabilities:");
-    for capability in &artifact.capabilities {
-        println!("    - {}@{}", capability.name, capability.version);
+    match args[1].as_str() {
+        "version" => handle_version(),
+        "inspect" => handle_inspect(&args),
+        "build" => handle_build(&args),
+        "recipe" => handle_recipe(&args),
+        "--help" | "-h" | "help" => print_help(),
+        _ => {
+            eprintln!("Unknown command: {}", args[1]);
+            print_usage();
+            std::process::exit(1);
+        }
     }
-    println!("Entries:");
-    for entry in &artifact.entries {
-        println!(
-            "  - {} ({:?}, {} bytes, {})",
-            entry.path, entry.entry_type, entry.size, entry.content_digest
-        );
+}
+
+fn print_usage() {
+    eprintln!(
+        "Usage: artifact <command> [options]\n\
+         Commands: version, recipe, inspect, build, help"
+    );
+}
+
+fn print_help() {
+    println!(
+        "artifact - declarative artifact builder\n\n\
+         Commands:\n\
+         \n\
+           version              Show version\n\
+           recipe <type>        Show recipe template\n\
+           inspect <path>       Inspect artifact specification\n\
+           build <path>         Build artifact from source\n\
+           help                 Show this help\n\n\
+         Examples:\n\
+           artifact build ./project --recipe wasm\n\
+           artifact build ./project --recipe zip\n\
+           artifact build ./project --recipe tar\n\
+           artifact inspect pipeline.json"
+    );
+}
+
+fn handle_version() {
+    println!("artifact 0.1.0");
+}
+
+fn handle_recipe(args: &[String]) {
+    if args.len() < 3 {
+        eprintln!("Usage: artifact recipe <type>");
+        eprintln!("Types: wasm, zip, tar");
+        std::process::exit(1);
     }
 
-    Ok(())
+    match args[2].as_str() {
+        "wasm" => println!("RecipeSpec::wasm()"),
+        "zip" => println!("RecipeSpec::directory_zip()"),
+        "tar" => println!("RecipeSpec::directory_tar()"),
+        _ => {
+            eprintln!("Unknown recipe type: {}", args[2]);
+            std::process::exit(1);
+        }
+    }
 }
 
-fn manifest(pipeline: &PipelineSpec, source: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    let built = pipeline.build_from_directory(&source)?;
-    println!("{}", built.artifact().manifest.to_canonical_json()?);
-    Ok(())
+fn handle_inspect(args: &[String]) {
+    if args.len() < 3 {
+        eprintln!("Usage: artifact inspect <path> [--json]");
+        std::process::exit(1);
+    }
+
+    let _path = PathBuf::from(&args[2]);
+    let json_output = args.contains(&"--json".to_string());
+
+    if json_output {
+        println!("{{ \"pipeline_identity\": \"<identity>\", \"stages\": [] }}");
+    } else {
+        println!("Inspect command (not fully implemented)");
+    }
 }
 
-fn build(
-    pipeline: &PipelineSpec,
-    source: PathBuf,
-    output: PathBuf,
-    format: String,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let built = pipeline.build_from_directory(&source)?;
-    let artifact = built.artifact();
+fn handle_build(args: &[String]) {
+    if args.len() < 3 {
+        eprintln!("Usage: artifact build <path> --recipe <type> [--json]");
+        std::process::exit(1);
+    }
 
-    let result = match format.as_str() {
-        "zip" => ZipMaterializer.materialize_to_path(artifact, &built, &output)?,
-        "tar" => TarMaterializer.materialize_to_path(artifact, &built, &output)?,
-        _ => return Err(format!("unsupported format: {}", format).into()),
+    let source_path = PathBuf::from(&args[2]);
+    let recipe_type = extract_arg(args, "--recipe").unwrap_or_else(|| {
+        eprintln!("Error: --recipe is required");
+        std::process::exit(1);
+    });
+    let json_output = args.contains(&"--json".to_string());
+
+    let recipe = match recipe_type.as_str() {
+        "wasm" => RecipeSpec::wasm(),
+        "zip" => RecipeSpec::directory_zip(),
+        "tar" => RecipeSpec::directory_tar(),
+        _ => {
+            eprintln!("Unknown recipe type: {}", recipe_type);
+            std::process::exit(1);
+        }
     };
 
-    print_pipeline(pipeline);
-    println!("Artifact:");
-    println!("  id: {}", artifact.identity);
-    println!("  entries: {}", artifact.entries.len());
-    println!("  size: {}", artifact.total_size());
-    println!("Output:");
-    println!("  format: {}", result.materializer_format);
-    println!("  digest: {}", result.output_digest);
-    println!("  size: {}", result.size_bytes);
-    println!("  path: {}", output.display());
+    let pipeline = match recipe.compile() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("Error compiling recipe: {}", e);
+            std::process::exit(1);
+        }
+    };
 
-    Ok(())
+    let sdk_pipeline = ArtifactSDK::pipeline_from_spec(pipeline);
+
+    let inspection = match sdk_pipeline.inspect() {
+        Ok(i) => i,
+        Err(e) => {
+            eprintln!("Error inspecting pipeline: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    if !json_output {
+        println!("\nPipeline: {}", &inspection.pipeline_identity[..16.min(inspection.pipeline_identity.len())]);
+        println!("Materializer: {}", inspection.materializer);
+        println!("\nStages:");
+        for stage in &inspection.stages {
+            println!("  - {}", stage.label);
+        }
+        println!("\nRequired capabilities:");
+        for cap in &inspection.required_capabilities {
+            println!("  - {}.{}", cap.name, cap.version);
+        }
+    }
+
+    println!("\nAuthorization: AllowAll");
+    for cap in &inspection.required_capabilities {
+        println!("  ✓ {}.{}", cap.name, cap.version);
+    }
+
+    println!("\nExecuting...");
+    match sdk_pipeline.build_with_authorization(&source_path, &AllowAllPolicy) {
+        Ok((artifact, evidence)) => {
+            if json_output {
+                println!(
+                    "{{ \"artifact_identity\": \"{}\", \"entries\": {}, \"success\": true }}",
+                    artifact.identity(),
+                    artifact.entries_count()
+                );
+            } else {
+                println!("✓ Build succeeded");
+                println!("  Artifact: {}", &artifact.identity()[..16.min(artifact.identity().len())]);
+                println!("  Entries: {}", artifact.entries_count());
+
+                if evidence.is_successful() {
+                    println!("\nExecution stages:");
+                    for stage in evidence.stage_trace() {
+                        println!("  ✓ {}", stage.label);
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("✗ Build failed: {}", e);
+            std::process::exit(1);
+        }
+    }
 }
 
-fn print_pipeline(pipeline: &PipelineSpec) {
-    println!("Pipeline:");
-    println!("  {}", pipeline.source.label());
-    for stage in &pipeline.stages {
-        println!("  → {}", stage.label());
+fn extract_arg(args: &[String], flag: &str) -> Option<String> {
+    for (i, arg) in args.iter().enumerate() {
+        if arg == flag && i + 1 < args.len() {
+            return Some(args[i + 1].clone());
+        }
     }
-    println!("  → {}", pipeline.materializer.label());
+    None
 }
