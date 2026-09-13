@@ -97,6 +97,7 @@ pub struct PipelineSpec {
 
 impl PipelineSpec {
     pub fn identity(&self) -> Result<String, ArtifactError> {
+        self.validate_stage_sequence()?;
         Ok(sha256_prefixed(&self.to_canonical_bytes()?))
     }
 
@@ -162,6 +163,7 @@ impl PipelineSpec {
             ));
         }
 
+        self.validate_stage_sequence()?;
         let root = root.as_ref();
         let pipeline_identity = self.identity()?;
         let discovered = DirectorySource::new(root)?.discover()?;
@@ -194,6 +196,49 @@ impl PipelineSpec {
             contents: seed.contents,
             stage_trace: state.stage_trace,
         })
+    }
+
+    fn validate_stage_sequence(&self) -> Result<(), ArtifactError> {
+        let mut seen_manifest = false;
+        let mut seen_validate = false;
+
+        for stage in &self.stages {
+            if seen_validate {
+                return Err(ArtifactError::InvalidState(
+                    "validate must be the final stage in Phase 1 pipelines".to_string(),
+                ));
+            }
+
+            match stage {
+                StageSpec::Select(_) if seen_manifest => {
+                    return Err(ArtifactError::InvalidState(
+                        "select stages must appear before manifest".to_string(),
+                    ));
+                }
+                StageSpec::Select(_) => {}
+                StageSpec::Manifest if seen_manifest => {
+                    return Err(ArtifactError::InvalidState(
+                        "manifest stage may only appear once".to_string(),
+                    ));
+                }
+                StageSpec::Manifest => seen_manifest = true,
+                StageSpec::Validate if !seen_manifest => {
+                    return Err(ArtifactError::InvalidState(
+                        "validate requires a preceding manifest stage".to_string(),
+                    ));
+                }
+                StageSpec::Validate => seen_validate = true,
+            }
+        }
+
+        if !seen_manifest {
+            return Err(ArtifactError::MissingStageOutput("manifest"));
+        }
+        if !seen_validate {
+            return Err(ArtifactError::MissingStageOutput("validate"));
+        }
+
+        Ok(())
     }
 }
 

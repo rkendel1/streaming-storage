@@ -1,7 +1,6 @@
 use crate::core::{Artifact, ArtifactError, sha256_prefixed, validate_entry_layout};
 use crate::pipeline::EntryContentResolver;
 use sha2::{Digest, Sha256};
-use std::fs;
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, Write};
 use std::path::Path;
@@ -37,13 +36,12 @@ impl ZipMaterializer {
         output: impl AsRef<Path>,
     ) -> Result<ZipMaterialization, ArtifactError> {
         let output = output.as_ref();
-        let file = File::create(output).map_err(|source| ArtifactError::io(output, source))?;
-        let file = self.materialize_to_writer(artifact, resolver, file)?;
+        let bytes = self.materialize_to_vec(artifact, resolver)?;
+        let mut file = File::create(output).map_err(|source| ArtifactError::io(output, source))?;
+        file.write_all(&bytes)
+            .map_err(|source| ArtifactError::io(output, source))?;
         file.sync_all()
             .map_err(|source| ArtifactError::io(output, source))?;
-        drop(file);
-
-        let bytes = fs::read(output).map_err(|source| ArtifactError::io(output, source))?;
         Ok(ZipMaterialization {
             output_digest: sha256_prefixed(&bytes),
             size_bytes: bytes.len() as u64,

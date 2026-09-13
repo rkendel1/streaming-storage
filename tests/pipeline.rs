@@ -1,10 +1,11 @@
 use artifact::{
     Artifact, ArtifactEntry, Capability, CreationMetadata, EntryType, PipelineSpec, Provenance,
-    SelectStageSpec, SourceSpec, StageSpec, ZipMaterializer, default_directory_zip_pipeline,
-    normalize_relative_path,
+    SelectStageSpec, SourceSpec, StageSpec, ZipMaterialization, ZipMaterializer,
+    default_directory_zip_pipeline, normalize_relative_path,
 };
 use sha2::Digest;
 use std::fs;
+use std::io::{Cursor, Read};
 use std::path::PathBuf;
 use tempfile::TempDir;
 
@@ -142,6 +143,39 @@ fn pipeline_identity_is_deterministic_for_equivalent_pipelines() {
 }
 
 #[test]
+fn duplicate_manifest_stages_are_rejected() {
+    let pipeline = PipelineSpec {
+        source: SourceSpec::Directory,
+        stages: vec![
+            StageSpec::Select(
+                SelectStageSpec::new(vec![".env".into()], vec!["node_modules".into()])
+                    .expect("selection should be valid"),
+            ),
+            StageSpec::Manifest,
+            StageSpec::Manifest,
+            StageSpec::Validate,
+        ],
+        materializer: artifact::MaterializerSpec::Zip,
+        capabilities: vec![
+            Capability::new("filesystem.read", "1"),
+            Capability::new("manifest.generate", "1"),
+            Capability::new("artifact.validate", "1"),
+            Capability::new("package.zip", "1"),
+        ],
+    };
+
+    let error = pipeline
+        .build_from_directory(example_dir())
+        .expect_err("duplicate manifest stages should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("manifest stage may only appear once")
+    );
+}
+
+#[test]
 fn artifact_identity_is_deterministic_for_same_source_and_pipeline() {
     let source = fixture_dir(&[("app/index.html", "<html></html>"), ("README.md", "hi")]);
     let pipeline = default_directory_zip_pipeline();
@@ -200,6 +234,28 @@ fn zip_output_is_deterministic_across_equivalent_builds() {
 }
 
 #[test]
+fn zip_materialization_reports_digest_without_rereading_output() {
+    let built = default_directory_zip_pipeline()
+        .build_from_directory(example_dir())
+        .expect("pipeline should build example");
+    let output_dir = TempDir::new().expect("temp dir should be created");
+    let output_path = output_dir.path().join("example.zip");
+
+    let report = ZipMaterializer
+        .materialize_to_path(built.artifact(), &built, &output_path)
+        .expect("zip should materialize to disk");
+
+    let bytes = fs::read(&output_path).expect("zip bytes should be readable");
+    assert_eq!(
+        report,
+        ZipMaterialization {
+            output_digest: digest_for_bytes(&bytes),
+            size_bytes: bytes.len() as u64,
+        }
+    );
+}
+
+#[test]
 fn logical_artifact_is_inspectable_without_zip_materialization() {
     let built = default_directory_zip_pipeline()
         .build_from_directory(example_dir())
@@ -239,6 +295,33 @@ fn artifact_rejects_conflicting_entries() {
     assert!(error.to_string().contains("conflicting artifact paths"));
 }
 
+#[test]
+fn materialization_rejects_content_drift() {
+    let artifact = Artifact::from_parts(
+        vec![ArtifactEntry {
+            path: "app.js".to_string(),
+            entry_type: EntryType::File,
+            size: 5,
+            content_digest: digest_for("hello"),
+        }],
+        "sha256:pipeline".to_string(),
+        vec![Capability::new("package.zip", "1")],
+        Provenance {
+            source_identity: "sha256:source".to_string(),
+            pipeline_identity: "sha256:pipeline".to_string(),
+            creation_metadata: CreationMetadata::default(),
+        },
+    )
+    .expect("artifact should be valid");
+
+    let resolver = StaticResolver::new([("app.js", "jello")]);
+    let error = ZipMaterializer
+        .materialize_to_vec(&artifact, &resolver)
+        .expect_err("materialization should reject mismatched content");
+
+    assert!(error.to_string().contains("content digest drifted"));
+}
+
 #[cfg(unix)]
 #[test]
 fn symlinks_are_rejected() {
@@ -272,8 +355,12 @@ fn fixture_dir(entries: &[(&str, &str)]) -> TempDir {
 }
 
 fn digest_for(value: &str) -> String {
+    digest_for_bytes(value.as_bytes())
+}
+
+fn digest_for_bytes(value: &[u8]) -> String {
     let mut hasher = sha2::Sha256::new();
-    sha2::Digest::update(&mut hasher, value.as_bytes());
+    sha2::Digest::update(&mut hasher, value);
     let digest = sha2::Digest::finalize(hasher);
     let mut encoded = String::from("sha256:");
     for byte in digest {
@@ -281,4 +368,30 @@ fn digest_for(value: &str) -> String {
         let _ = write!(encoded, "{byte:02x}");
     }
     encoded
+}
+
+struct StaticResolver {
+    entries: std::collections::BTreeMap<String, Vec<u8>>,
+}
+
+impl StaticResolver {
+    fn new(entries: [(&str, &str); 1]) -> Self {
+        Self {
+            entries: entries
+                .into_iter()
+                .map(|(path, value)| (path.to_string(), value.as_bytes().to_vec()))
+                .collect(),
+        }
+    }
+}
+
+impl artifact::EntryContentResolver for StaticResolver {
+    fn open(&self, path: &str) -> Result<Box<dyn Read>, artifact::ArtifactError> {
+        let bytes = self
+            .entries
+            .get(path)
+            .cloned()
+            .expect("resolver entry should exist");
+        Ok(Box::new(Cursor::new(bytes)))
+    }
 }
