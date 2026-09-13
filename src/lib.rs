@@ -6,6 +6,7 @@ pub mod materializers;
 pub mod pipeline;
 pub mod public_api;
 pub mod recipes;
+pub mod storage;
 pub mod transforms;
 #[cfg(feature = "wasm")]
 pub mod wasm;
@@ -34,6 +35,7 @@ pub use crate::public_api::{
     PublicPipelineInspection, PublicStage,
 };
 pub use crate::recipes::{RecipeConfig, RecipeSpec, RecipeType};
+pub use crate::storage::{LocalArtifactStore, RecoveredArtifact};
 pub use crate::transforms::{
     ArtifactTransform, GenerateTransform, PrefixTransform, RedactTransform, TransformedArtifact,
 };
