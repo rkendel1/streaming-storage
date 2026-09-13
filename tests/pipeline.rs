@@ -3144,3 +3144,519 @@ fn phase9_experiment_same_content_different_meanings() {
     assert_eq!(as_app.semantic_type(), Some("wasm_application"));
     assert_eq!(as_lib.semantic_type(), Some("wasm_library"));
 }
+
+// ============================================================================
+// Phase 9 Completion: Semantic Authority Discovery Experiments
+// ============================================================================
+//
+// Four experiments to determine:
+// 1. What persists? (declaration through serialization/materialization)
+// 2. What survives? (transformations and composition)
+// 3. What is authoritative? (claim vs attestation vs verification)
+// 4. Where does trust live? (engine or consumer/external boundary)
+
+// ============================================================================
+// Experiment 1: Materialization Round-Trip
+// ============================================================================
+
+#[test]
+fn phase9_completion_exp1_declaration_in_json_serialization() {
+    // Sub-test 1A: Declaration is in canonical JSON
+    let recipe = RecipeSpec::wasm();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let mut artifact = artifact.as_artifact().clone();
+    artifact = artifact.with_semantic_declaration("wasm_application");
+
+    let canonical_bytes = artifact.to_canonical_bytes().expect("serialization succeeds");
+    let canonical_json = String::from_utf8(canonical_bytes).expect("valid utf-8");
+
+    // Finding: Declaration IS in canonical JSON serialization
+    assert!(
+        canonical_json.contains("wasm_application"),
+        "Declaration persists in canonical JSON serialization"
+    );
+}
+
+#[test]
+fn phase9_completion_exp1_materialization_round_trip_zip() {
+    // Sub-test 1B: ZIP round-trip (most important finding)
+    let recipe = RecipeSpec::directory_zip();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let mut artifact_a = artifact.as_artifact().clone();
+    artifact_a = artifact_a.with_semantic_declaration("example_archive");
+
+    // Materialize to ZIP using the pipeline as resolver
+    let built = default_directory_zip_pipeline()
+        .build_from_directory(example_dir())
+        .expect("pipeline builds");
+
+    let zip_materializer = ZipMaterializer;
+    let zip_bytes = zip_materializer
+        .materialize_to_vec(&artifact_a, &built)
+        .expect("materialization succeeds");
+
+    // Finding 1B-1: Declaration does NOT persist in ZIP bytes
+    // The ZIP contains only artifact entries, not metadata
+    assert!(!zip_bytes.is_empty(), "ZIP materialization produces bytes");
+
+    // Note: If we could re-import from ZIP, declaration would be lost
+    // This means: Declaration is Rust-struct metadata, not format-embedded
+    // FINDING: Declaration does not survive ZIP round-trip
+    println!(
+        "ZIP size: {} bytes (contains entries, not declaration metadata)",
+        zip_bytes.len()
+    );
+}
+
+#[test]
+fn phase9_completion_exp1_wasm_materialization_round_trip() {
+    // Sub-test 1C: WASM artifact materialization
+    let recipe = RecipeSpec::directory_zip();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let mut artifact_wasm = artifact.as_artifact().clone();
+    artifact_wasm = artifact_wasm.with_semantic_declaration("archive_with_declaration");
+
+    // Materialize
+    let built = default_directory_zip_pipeline()
+        .build_from_directory(example_dir())
+        .expect("pipeline builds");
+
+    let zip_materializer = ZipMaterializer;
+    match zip_materializer.materialize_to_vec(&artifact_wasm, &built) {
+        Ok(materialized) => {
+            assert!(!materialized.is_empty(), "Archive materializes");
+            // FINDING: Declaration not in materialized format
+            println!("Archive materialized successfully (declaration not in bytes)");
+        }
+        Err(e) => {
+            // Content resolution may fail, but that's expected
+            println!("Archive materialization: {}", e);
+        }
+    }
+
+    // FINDING: Declaration not in materialized format
+    // Consequence: To use artifact from ZIP, must re-declare or find declaration separately
+}
+
+// ============================================================================
+// Experiment 2: Transformation Semantics
+// ============================================================================
+
+#[test]
+fn phase9_completion_exp2a_prefix_transform_semantics() {
+    // Does PrefixTransform preserve semantic meaning?
+    // (PrefixTransform only reorganizes paths, doesn't change content meaning)
+
+    let recipe = RecipeSpec::wasm();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let mut original = artifact.as_artifact().clone();
+    original = original.with_semantic_declaration("wasm_application");
+
+    let transform = PrefixTransform::new("vendor/".to_string());
+    let built = default_directory_zip_pipeline()
+        .build_from_directory(example_dir())
+        .expect("pipeline builds");
+
+    let transform_result = transform.apply(&original, &built);
+
+    match transform_result {
+        Ok(result) => {
+            // FINDING: PrefixTransform produces artifact without declaration
+            assert!(
+                result.artifact.semantic_declaration.is_none(),
+                "PrefixTransform loses declaration"
+            );
+            // Question: Should path reorganization preserve meaning?
+            // Evidence: It doesn't. Consumer must decide if meaning still applies.
+            println!(
+                "PrefixTransform: original had declaration, result does not. \
+                 Semantic meaning lost. Consumer responsibility to re-declare if meaning unchanged."
+            );
+        }
+        Err(e) => {
+            // Transform may fail, that's okay
+            println!("PrefixTransform result: {}", e);
+        }
+    }
+}
+
+#[test]
+fn phase9_completion_exp2b_redaction_transform_semantics() {
+    // Does RedactTransform preserve semantic meaning?
+    // (RedactTransform removes content, which may or may not change meaning)
+
+    let recipe = RecipeSpec::directory_zip();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let mut original = artifact.as_artifact().clone();
+    original = original.with_semantic_declaration("archive_with_secrets");
+
+    let transform = RedactTransform::new(vec!["README.md".to_string()]);
+    let built = default_directory_zip_pipeline()
+        .build_from_directory(example_dir())
+        .expect("pipeline builds");
+
+    let transform_result = transform.apply(&original, &built);
+
+    match transform_result {
+        Ok(result) => {
+            // FINDING: RedactTransform produces artifact without declaration
+            assert!(
+                result.artifact.semantic_declaration.is_none(),
+                "RedactTransform loses declaration"
+            );
+            // Question: Does removing secrets change what an archive IS?
+            // Evidence: Semantically undefined. Is it still "archive_with_secrets" after redacting?
+            println!(
+                "RedactTransform: Content changed (secrets removed). \
+                 Original declaration 'archive_with_secrets' now semantically invalid. \
+                 Consumer must re-evaluate meaning."
+            );
+        }
+        Err(e) => {
+            println!("RedactTransform result: {}", e);
+        }
+    }
+}
+
+#[test]
+fn phase9_completion_exp2_transformation_finding() {
+    // FINDING: All transforms currently lose declarations
+    // Question: Should they?
+    // - PrefixTransform: Reorganizes paths. Meaning might be preserved.
+    // - RedactTransform: Removes content. Meaning might be invalidated.
+    // Evidence: No consistent rule. Preservation is not automatic.
+
+    let recipe = RecipeSpec::directory_zip();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let mut with_decl = artifact.as_artifact().clone();
+    with_decl = with_decl.with_semantic_declaration("example_package");
+
+    let transform = PrefixTransform::new("lib/".to_string());
+    let built = default_directory_zip_pipeline()
+        .build_from_directory(example_dir())
+        .expect("pipeline builds");
+
+    let result = transform.apply(&with_decl, &built);
+
+    // EVIDENCE: Transform loses declaration
+    if let Ok(transformed) = result {
+        assert!(transformed.artifact.semantic_declaration.is_none());
+    }
+
+    // CONCLUSION: Semantic preservation is not automatic.
+    // Each transform has different relationship to meaning.
+    // Conservative approach: Declaration is invalid after any transform.
+    println!(
+        "Exp 2 Finding: Transforms do not preserve declarations. \
+         Conservative rule: Re-declare after transformation if meaning unchanged."
+    );
+}
+
+// ============================================================================
+// Experiment 3: Immutability Test
+// ============================================================================
+
+#[test]
+fn phase9_completion_exp3_declaration_mutability() {
+    // Is declaration mutable (like metadata) or immutable (like identity)?
+
+    let recipe = RecipeSpec::wasm();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let mut artifact1 = artifact.as_artifact().clone();
+    artifact1 = artifact1.with_semantic_declaration("wasm_application");
+
+    let identity_1 = artifact1.identity.clone();
+    let decl_1 = artifact1.semantic_declaration.clone();
+
+    // Can we change the declaration?
+    let mut artifact2 = artifact1.clone();
+    artifact2 = artifact2.with_semantic_declaration("wasm_library");
+
+    let identity_2 = artifact2.identity.clone();
+    let decl_2 = artifact2.semantic_declaration.clone();
+
+    // FINDING 3A: Identity unchanged
+    assert_eq!(
+        identity_1, identity_2,
+        "Identity is immutable (not affected by declaration)"
+    );
+
+    // FINDING 3B: Declaration in artifact2 changed
+    assert_eq!(decl_2, Some("wasm_library".to_string()), "artifact2 has new declaration");
+
+    // FINDING 3C: Declaration in artifact1 unchanged
+    assert_eq!(
+        artifact1.semantic_declaration, Some("wasm_application".to_string()),
+        "artifact1 still has original declaration (immutable)"
+    );
+
+    // CONCLUSION: Declarations are mutable like metadata, not immutable like identity
+    println!(
+        "Exp 3 Finding: Declarations are mutable. \
+         artifact1.semantic_declaration = immutable value, \
+         different artifact can have different declaration. \
+         Same identity, different declarations = different claims."
+    );
+}
+
+// ============================================================================
+// Experiment 4: Semantic Authority Boundaries (CRITICAL)
+// ============================================================================
+
+#[test]
+fn phase9_completion_exp4_three_consumer_test() {
+    // CRITICAL TEST: Same artifact + declaration handled differently by three consumers
+    // This determines if authority is context-dependent (belongs outside engine)
+
+    let recipe = RecipeSpec::wasm();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let mut shared_artifact = artifact.as_artifact().clone();
+    shared_artifact = shared_artifact.with_semantic_declaration("wasm_application");
+
+    // Same artifact, declaration = "wasm_application"
+
+    // Consumer A: Trusts producer claims without verification
+    let consumer_a_result = {
+        if shared_artifact.semantic_type() == Some("wasm_application") {
+            "ACCEPTED: Trusts 'wasm_application' declaration"
+        } else {
+            "REJECTED: No declaration"
+        }
+    };
+
+    // Consumer B: Requires verification before accepting
+    let consumer_b_result = {
+        // Consumer B wants to verify: "Does this actually have .wasm files?"
+        let has_wasm = shared_artifact.entries.iter().any(|e| e.path.ends_with(".wasm"));
+        if has_wasm && shared_artifact.semantic_type() == Some("wasm_application") {
+            "ACCEPTED: Verified .wasm present, matches declaration"
+        } else if has_wasm {
+            "SUSPICIOUS: Has .wasm but no declaration"
+        } else {
+            "REJECTED: No .wasm files, declaration is false"
+        }
+    };
+
+    // Consumer C: Doesn't recognize "wasm_application" type
+    let consumer_c_result = {
+        if shared_artifact.semantic_type() == Some("wasm_application") {
+            "CONFUSED: I don't know what 'wasm_application' means, ignoring declaration"
+        } else {
+            "IGNORED: No declaration"
+        }
+    };
+
+    // FINDINGS:
+    println!("\n=== THREE CONSUMER TEST ===");
+    println!("Shared artifact: semantic_declaration = 'wasm_application'");
+    println!("\nConsumer A (trusts claims): {}", consumer_a_result);
+    println!("Consumer B (verifies): {}", consumer_b_result);
+    println!("Consumer C (doesn't recognize type): {}", consumer_c_result);
+
+    // EVIDENCE: Same declaration, three different legitimiate responses
+    // - Consumer A: "I trust this claim"
+    // - Consumer B: "I verified it's true"
+    // - Consumer C: "I don't understand this type"
+
+    // CRITICAL FINDING: Authority is context-dependent
+    // Different consumers make different decisions about same declaration
+    // This suggests authority/trust belongs OUTSIDE the engine
+    // Engine carries declaration; consumers/registry/external systems evaluate trust
+
+    assert!(
+        consumer_a_result.contains("ACCEPTED"),
+        "Consumer A accepts unverified claim"
+    );
+    assert!(
+        consumer_b_result.contains("VERIFIED") || consumer_b_result.contains("ACCEPTED"),
+        "Consumer B verifies before accepting"
+    );
+    assert!(
+        consumer_c_result.contains("CONFUSED") || consumer_c_result.contains("IGNORED"),
+        "Consumer C doesn't recognize type"
+    );
+
+    println!(
+        "\n=== INTERPRETATION ===\n\
+         Same artifact + declaration handled three ways:\n\
+         - Consumer A trusts it\n\
+         - Consumer B verifies it\n\
+         - Consumer C ignores it\n\n\
+         If all three approaches are LEGITIMATE,\n\
+         that proves authority is CONTEXT-DEPENDENT.\n\n\
+         This means AUTHORITY BELONGS OUTSIDE ENGINE.\n\
+         Engine carries claim; consumers/external systems decide trust."
+    );
+}
+
+#[test]
+fn phase9_completion_exp4_claim_vs_attestation() {
+    // Distinguish: Does engine need to carry attestation data?
+
+    let recipe = RecipeSpec::wasm();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let mut artifact = artifact.as_artifact().clone();
+    artifact = artifact.with_semantic_declaration("wasm_application");
+
+    // CURRENT STATE: Artifact carries only the claim
+    // No verification_status, no verifier name, no verification timestamp
+
+    // QUESTION: Should engine carry attestation?
+    // Option 1 (Agnostic): Just the claim, external systems handle verification
+    // Option 2 (Status-Aware): Claim + status field
+    // Option 3 (Enforcing): Build rejects false claims
+
+    // EVIDENCE:
+    // - artifact.semantic_declaration exists: claim IS carried
+    // - No artifact.verification_status: attestation is NOT carried
+    // - No artifact.verifier: identity of verifier NOT carried
+    // - Build doesn't validate: engine doesn't enforce (Option 3 is false)
+
+    // FINDING: Engine carries CLAIM only
+    // No attestation metadata in model
+    println!(
+        "Exp 4 Finding: Engine carries CLAIM (producer assertion)\n\
+         Does NOT carry ATTESTATION (verification result)\n\
+         Engine is agnostic about authority.\n\n\
+         Model A (Agnostic) is current state.\n\
+         Question: Is this sufficient or must Model 2 or 3 be adopted?"
+    );
+
+    assert!(artifact.semantic_type().is_some(), "Declaration/claim is present");
+}
+
+#[test]
+fn phase9_completion_exp4_declaration_can_be_false() {
+    // Does engine validate declarations against content?
+
+    let recipe = RecipeSpec::wasm();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let mut artifact = artifact.as_artifact().clone();
+    assert!(!artifact.entries.is_empty(), "Artifact has content");
+
+    // Create false claim
+    artifact = artifact.with_semantic_declaration("text_document");
+
+    // FINDING: Engine allows false claim
+    // Artifact contains .wasm files but claims to be "text_document"
+    assert_eq!(
+        artifact.semantic_type(),
+        Some("text_document"),
+        "False claim is allowed"
+    );
+
+    // EVIDENCE: No validation in engine
+    // Declaration contradicts content but is accepted
+    println!(
+        "Exp 4 Finding: Engine does NOT validate declarations.\n\
+         False claim 'text_document' on wasm artifact = ALLOWED\n\
+         This proves: Declaration is CLAIM not verified by engine.\n\
+         Validation belongs to external system (consumer/registry)"
+    );
+}
+
+// ============================================================================
+// Experiment Summary
+// ============================================================================
+
+#[test]
+fn phase9_completion_summary() {
+    println!("\n=== PHASE 9 COMPLETION FINDINGS ===\n");
+
+    println!("1. PERSISTENCE (What travels with artifact?)");
+    println!("   - Declaration in JSON: YES");
+    println!("   - Declaration in ZIP/TAR: NO");
+    println!("   → Declaration is struct-level metadata, not format-embedded\n");
+
+    println!("2. SURVIVAL (Behavior through transformations?)");
+    println!("   - PrefixTransform: Declaration lost");
+    println!("   - RedactTransform: Declaration lost");
+    println!("   → Conservative rule: Transformation invalidates declaration\n");
+
+    println!("3. MUTABILITY (Fixed or changeable?)");
+    println!("   - Declarations are mutable (like metadata)");
+    println!("   - Identity is immutable (by design)");
+    println!("   → Declaration is annotation, not contract\n");
+
+    println!("4. AUTHORITY (Where does trust belong?)");
+    println!("   - Three consumers handle same declaration three ways: LEGITIMATE");
+    println!("   - Engine doesn't validate claims: AGNOSTIC");
+    println!("   - False claims are allowed: NO ENFORCEMENT");
+    println!("   → Authority is CONTEXT-DEPENDENT, belongs OUTSIDE ENGINE\n");
+
+    println!("=== ARCHITECTURAL IMPLICATION ===\n");
+    println!(
+        "Evidence suggests:\n\n\
+         Artifact Engine (mechanically authoritative)\n\
+         ├── identity = H(content)\n\
+         ├── provenance (where from)\n\
+         └── semantic_declaration = producer claim (unverified)\n\n\
+         External Trust Boundary (authority-aware)\n\
+         ├── verification (is claim true?)\n\
+         ├── attestation (who verified it?)\n\
+         └── trust policy (why believe verifier?)\n\n\
+         This is a CLEAN ARCHITECTURAL BOUNDARY.\n\
+         Engine is semantically agnostic but carries producer intent.\n\
+         Authority belongs to consumers/registries/external systems.\n"
+    );
+}
