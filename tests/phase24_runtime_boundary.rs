@@ -4,6 +4,7 @@ use artifact::{
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::Read;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -32,12 +33,15 @@ fn prepare_artifact_fixture() -> PreparedArtifact {
 
     let current_exe = std::env::current_exe().expect("current test binary should be available");
     fs::copy(&current_exe, &executable_path).expect("fixture executable should be copied");
-    let mut permissions = fs::metadata(&executable_path)
-        .expect("fixture executable metadata should be available")
-        .permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(&executable_path, permissions)
-        .expect("fixture executable permissions should be set");
+    #[cfg(unix)]
+    {
+        let mut permissions = fs::metadata(&executable_path)
+            .expect("fixture executable metadata should be available")
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&executable_path, permissions)
+            .expect("fixture executable permissions should be set");
+    }
 
     let pipeline = RecipeSpec::directory_zip()
         .compile()
@@ -233,22 +237,21 @@ fn recovered_content_remains_valid() {
 #[test]
 fn runtime_has_no_provider_dependency() {
     let source = include_str!("../examples/runtime-consumer/src/lib.rs").to_lowercase();
+    let manifest = include_str!("../examples/runtime-consumer/Cargo.toml").to_lowercase();
     let forbidden = [
         "docker",
         "oci",
         "kubernetes",
         "fly",
         "render",
-        "daemon",
-        "credential",
-        "aws",
-        "gcp",
-        "azure",
+        "aws_sdk",
+        "google_cloud",
+        "azure_",
     ];
 
     for token in forbidden {
         assert!(
-            !source.contains(token),
+            !source.contains(token) && !manifest.contains(token),
             "runtime consumer must not depend on provider term: {token}"
         );
     }

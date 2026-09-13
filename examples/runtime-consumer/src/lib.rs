@@ -77,6 +77,12 @@ fn extract_zip(zip_path: &Path, destination: &Path) -> io::Result<()> {
                 "zip entry path escapes destination",
             ));
         };
+        if is_symlink_entry(&entry) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "zip entry symlinks are not supported",
+            ));
+        }
 
         let output_path = destination.join(name);
         if entry.name().ends_with('/') {
@@ -103,4 +109,12 @@ fn ensure_executable_permissions(path: &Path) -> io::Result<()> {
         fs::set_permissions(path, permissions)?;
     }
     Ok(())
+}
+
+fn is_symlink_entry(entry: &zip::read::ZipFile<'_>) -> bool {
+    const S_IFMT: u32 = 0o170000;
+    const S_IFLNK: u32 = 0o120000;
+    entry
+        .unix_mode()
+        .is_some_and(|mode| (mode & S_IFMT) == S_IFLNK)
 }
