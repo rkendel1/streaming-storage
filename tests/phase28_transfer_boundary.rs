@@ -314,6 +314,7 @@ fn corrupted_transfer_fails_integrity_check() {
         .expect("representation should transfer to destination context");
 
     let mut bytes = fs::read(&destination_archive).expect("destination archive should be readable");
+    assert!(!bytes.is_empty(), "destination archive should not be empty");
     bytes[0] ^= 0xFF;
     fs::write(&destination_archive, bytes).expect("destination archive should be rewritten");
 

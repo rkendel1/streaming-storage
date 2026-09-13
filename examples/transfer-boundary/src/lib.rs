@@ -1,6 +1,6 @@
-use artifact::core::sha256_prefixed;
+use sha2::{Digest, Sha256};
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -97,11 +97,9 @@ pub fn import_oci_representation(
         )));
     }
 
-    let tag_output = run_docker(&[
-        "tag",
-        expected_representation_identity,
-        destination_image_reference,
-    ])?;
+    let loaded_reference = loaded_image_reference(&String::from_utf8_lossy(&load_output.stdout))
+        .unwrap_or_else(|| expected_representation_identity.to_string());
+    let tag_output = run_docker(&["tag", &loaded_reference, destination_image_reference])?;
     if !tag_output.status.success() {
         return Err(io::Error::other(format!(
             "docker tag failed: {}",
@@ -158,8 +156,32 @@ pub fn remove_image(image_reference: &str) -> io::Result<()> {
 }
 
 fn sha256_file(path: &Path) -> io::Result<String> {
-    let bytes = fs::read(path)?;
-    Ok(sha256_prefixed(&bytes))
+    let mut file = fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 8192];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+
+    let mut encoded = String::from("sha256:");
+    for byte in hasher.finalize() {
+        use std::fmt::Write as _;
+        let _ = write!(encoded, "{byte:02x}");
+    }
+    Ok(encoded)
+}
+
+fn loaded_image_reference(load_output: &str) -> Option<String> {
+    load_output.lines().find_map(|line| {
+        line.strip_prefix("Loaded image: ")
+            .or_else(|| line.strip_prefix("Loaded image ID: "))
+            .map(|reference| reference.trim().to_string())
+            .filter(|reference| !reference.is_empty())
+    })
 }
 
 fn run_docker(arguments: &[&str]) -> io::Result<Output> {

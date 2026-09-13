@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 artifact = { path = "../.." }
+sha2 = "0.11.0"
