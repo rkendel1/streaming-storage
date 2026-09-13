@@ -162,6 +162,8 @@ pub struct Artifact {
     pub pipeline_identity: String,
     pub capabilities: Vec<Capability>,
     pub provenance: Provenance,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub semantic_declaration: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -200,7 +202,17 @@ impl Artifact {
             pipeline_identity,
             capabilities,
             provenance,
+            semantic_declaration: None,
         })
+    }
+
+    pub fn with_semantic_declaration(mut self, declaration: impl Into<String>) -> Self {
+        self.semantic_declaration = Some(declaration.into());
+        self
+    }
+
+    pub fn semantic_type(&self) -> Option<&str> {
+        self.semantic_declaration.as_deref()
     }
 
     pub fn total_size(&self) -> u64 {

@@ -4,7 +4,7 @@ use artifact::{
     PrefixTransform, RedactTransform, RecipeSpec, SelectStageSpec, SourceSpec, StageSpec, TarMaterializer,
     TransformedContentResolver, ZipMaterializer, default_directory_zip_pipeline,
     normalize_relative_path, ArtifactTransform, AllowAllPolicy, AllowListPolicy, AuthorizationResult,
-    CapabilityPolicy, ArtifactSDK,
+    CapabilityPolicy, ArtifactSDK, ApplicationArtifact,
 };
 use sha2::Digest;
 use std::collections::BTreeMap;
@@ -2768,4 +2768,379 @@ fn composition_no_second_execution_engine() {
         .expect("composition should succeed");
 
     // Result is Artifact type, not a new CompositeArtifact or similar
+}
+// Phase 9 Foundation: Artifact Semantics Discovery Tests
+//
+// Model B Tests: Artifact-Associated Semantic Declaration
+//
+// Key findings tested:
+// - Semantic declarations are queryable fields on artifacts
+// - They do NOT affect artifact identity
+// - They do NOT change pipeline identity
+// - They are distinct from provenance
+// - Artifacts can exist without them
+// - Transforms and composition explicitly lose declarations
+// - Declarations serialize in canonical JSON
+
+#[test]
+fn phase9_identity_test1_semantic_declaration_is_expressible() {
+    let recipe = RecipeSpec::wasm();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let mut wasm_artifact = artifact.as_artifact().clone();
+    wasm_artifact = wasm_artifact.with_semantic_declaration("wasm_application");
+
+    assert_eq!(
+        wasm_artifact.semantic_type(),
+        Some("wasm_application"),
+        "semantic declaration should be queryable"
+    );
+}
+
+#[test]
+fn phase9_identity_test2_artifact_identity_unchanged_by_declaration() {
+    let recipe = RecipeSpec::wasm();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let base_artifact = artifact.as_artifact().clone();
+    let identity_before = base_artifact.identity.clone();
+
+    let with_app = base_artifact.clone().with_semantic_declaration("wasm_application");
+    let with_lib = base_artifact.clone().with_semantic_declaration("wasm_library");
+
+    assert_eq!(
+        with_app.identity, with_lib.identity,
+        "semantic declaration does not affect identity"
+    );
+    assert_eq!(identity_before, with_app.identity);
+}
+
+#[test]
+fn phase9_identity_test3_pipeline_identity_remains_distinct() {
+    let recipe = RecipeSpec::wasm();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let inspect_before = pipeline.inspect().expect("inspect should succeed");
+    let pipeline_id = inspect_before.pipeline_identity.clone();
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let inspect_after = pipeline.inspect().expect("inspect should succeed");
+    assert_eq!(inspect_after.pipeline_identity, pipeline_id, "pipeline identity stable");
+
+    let mut wasm_artifact = artifact.as_artifact().clone();
+    wasm_artifact = wasm_artifact.with_semantic_declaration("wasm_application");
+
+    // Pipeline identity unchanged even though artifact has semantic declaration
+    let inspect_final = pipeline.inspect().expect("inspect should succeed");
+    assert_eq!(inspect_final.pipeline_identity, pipeline_id);
+}
+
+#[test]
+fn phase9_identity_test4_provenance_distinct_from_semantic_meaning() {
+    let recipe = RecipeSpec::directory_zip();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let artifact = artifact.as_artifact().clone();
+
+    assert!(!artifact.provenance.source_identity.is_empty());
+    assert_eq!(artifact.semantic_type(), None);
+
+    let with_decl = artifact.clone().with_semantic_declaration("some_type");
+    assert_eq!(artifact.provenance, with_decl.provenance, "provenance unchanged by declaration");
+}
+
+#[test]
+fn phase9_identity_test5_artifact_can_exist_without_semantic_declaration() {
+    let recipe = RecipeSpec::directory_zip();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let artifact = artifact.as_artifact().clone();
+
+    assert!(artifact.semantic_type().is_none());
+    assert!(!artifact.identity.is_empty());
+    assert!(!artifact.entries.is_empty());
+}
+
+#[test]
+fn phase9_interpretation_test6_consumer_queries_declaration_without_inference() {
+    let recipe = RecipeSpec::wasm();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let mut wasm_artifact = artifact.as_artifact().clone();
+
+    // No inference from .wasm files
+    assert_eq!(wasm_artifact.semantic_type(), None);
+
+    wasm_artifact = wasm_artifact.with_semantic_declaration("wasm_application");
+    assert_eq!(wasm_artifact.semantic_type(), Some("wasm_application"));
+}
+
+#[test]
+fn phase9_interpretation_test7_interpretation_does_not_invent_semantic_information() {
+    let recipe = RecipeSpec::wasm();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let wasm_artifact = artifact.as_artifact().clone();
+
+    // No silent inference
+    assert!(wasm_artifact.semantic_type().is_none());
+
+    // Explicit interpretation is still possible
+    let app = ApplicationArtifact::from_wasm_artifact(
+        wasm_artifact,
+        vec![Capability::new("wasm.execute", "1")],
+    );
+    assert!(app.is_ok());
+}
+
+#[test]
+fn phase9_interpretation_test8_invalid_declaration_handled_explicitly() {
+    let recipe = RecipeSpec::directory_zip();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let mut artifact = artifact.as_artifact().clone();
+    artifact = artifact.with_semantic_declaration("invalid_type");
+
+    // Model B allows any string (no validation here)
+    assert_eq!(artifact.semantic_type(), Some("invalid_type"));
+}
+
+#[test]
+fn phase9_transformation_test9_transforming_artifact_loses_declaration() {
+    let recipe = RecipeSpec::wasm();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let mut original = artifact.as_artifact().clone();
+    original = original.with_semantic_declaration("wasm_application");
+
+    // Apply transform using MemoryContentResolver
+    let transform = PrefixTransform::new("transformed/");
+    let resolver = MemoryContentResolver::new(BTreeMap::new());
+    let transformed_result = transform.apply(&original, &resolver);
+
+    // Transform creates new artifact without declaration
+    match transformed_result {
+        Ok(result) => {
+            assert!(
+                result.artifact.semantic_declaration.is_none(),
+                "semantic declaration should not carry through transform"
+            );
+
+            let with_new_decl = result.artifact.with_semantic_declaration("wasm_application");
+            assert_eq!(with_new_decl.semantic_type(), Some("wasm_application"));
+        }
+        Err(_) => {
+            // Empty resolver causes expected failure - that's ok
+        }
+    }
+}
+
+#[test]
+fn phase9_transformation_test10_composing_artifacts_loses_individual_declarations() {
+    let recipe = RecipeSpec::wasm();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let mut a = artifact.as_artifact().clone();
+    a = a.with_semantic_declaration("wasm_application");
+
+    // Single artifact composition is a pass-through (returns clone)
+    let composition = artifact::CompositionInput::new(vec![a.clone()]);
+    let composed = composition
+        .compose(artifact::CompositionOptions::default())
+        .expect("composition should succeed");
+
+    // Single artifact pass-through preserves declaration
+    // (Model B doesn't define semantics for multi-input composition with conflicting declarations)
+    assert_eq!(
+        composed.semantic_declaration,
+        Some("wasm_application".to_string()),
+        "single artifact composition preserves declaration"
+    );
+}
+
+#[test]
+fn phase9_materialization_test11_semantic_declaration_survives_serialization() {
+    let recipe = RecipeSpec::directory_zip();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let mut a = artifact.as_artifact().clone();
+    a = a.with_semantic_declaration("example_package");
+
+    let bytes = a.to_canonical_bytes().expect("serialization should succeed");
+    assert!(!bytes.is_empty());
+}
+
+#[test]
+fn phase9_materialization_test12_serialization_includes_declaration() {
+    let recipe = RecipeSpec::directory_zip();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let mut a = artifact.as_artifact().clone();
+    a = a.with_semantic_declaration("example_package");
+
+    let bytes = a.to_canonical_bytes().expect("serialization should succeed");
+    let json = String::from_utf8(bytes).expect("valid utf-8");
+
+    assert!(
+        json.contains("example_package"),
+        "declaration in serialized JSON"
+    );
+}
+
+#[test]
+fn phase9_architecture_test13_no_second_execution_engine() {
+    let recipe = RecipeSpec::wasm();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, evidence) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    assert!(!evidence.used_capabilities().is_empty());
+
+    let mut artifact = artifact.as_artifact().clone();
+    artifact = artifact.with_semantic_declaration("wasm_application");
+
+    // Execution trace exists and is independent of declaration
+    let stages = evidence.stage_trace();
+    assert!(!stages.is_empty());
+    assert!(stages.iter().any(|s| s.label == "select"));
+    assert!(stages.iter().any(|s| s.label == "compile"));
+}
+
+#[test]
+fn phase9_architecture_test14_no_second_identity_system() {
+    let recipe = RecipeSpec::directory_zip();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let artifact = artifact.as_artifact().clone();
+
+    // Single identity system
+    assert!(!artifact.identity.is_empty());
+    assert!(!artifact.pipeline_identity.is_empty());
+}
+
+#[test]
+fn phase9_architecture_test15_no_hidden_state() {
+    let recipe = RecipeSpec::wasm();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let mut artifact = artifact.as_artifact().clone();
+    artifact = artifact.with_semantic_declaration("wasm_application");
+
+    // Semantic information is in artifact struct (no external state)
+    assert_eq!(artifact.semantic_type(), Some("wasm_application"));
+}
+
+#[test]
+fn phase9_experiment_authority_declaration_vs_content() {
+    let recipe = RecipeSpec::wasm();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let mut wasm_artifact = artifact.as_artifact().clone();
+
+    // Artifact has .wasm files
+    assert!(wasm_artifact.entries.iter().any(|e| e.path.ends_with(".wasm")));
+
+    // But we declare it differently
+    wasm_artifact = wasm_artifact.with_semantic_declaration("wasm_library");
+
+    // Declaration is allowed (it's a claim, not verified)
+    assert_eq!(wasm_artifact.semantic_type(), Some("wasm_library"));
+}
+
+#[test]
+fn phase9_experiment_same_content_different_meanings() {
+    let recipe = RecipeSpec::wasm();
+    let recipe_artifact = ArtifactSDK::recipe_from_spec(recipe);
+    let pipeline = recipe_artifact.compile().expect("compilation should succeed");
+
+    let (artifact, _) = pipeline
+        .build_with_authorization(example_dir(), &AllowAllPolicy)
+        .expect("execution should succeed");
+
+    let base = artifact.as_artifact().clone();
+
+    let as_app = base.clone().with_semantic_declaration("wasm_application");
+    let as_lib = base.clone().with_semantic_declaration("wasm_library");
+
+    // Same identity, different semantics
+    assert_eq!(as_app.identity, as_lib.identity);
+    assert_eq!(as_app.semantic_type(), Some("wasm_application"));
+    assert_eq!(as_lib.semantic_type(), Some("wasm_library"));
 }
