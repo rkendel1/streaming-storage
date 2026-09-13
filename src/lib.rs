@@ -5,6 +5,8 @@ pub mod pipeline;
 pub mod public_api;
 pub mod recipes;
 pub mod transforms;
+#[cfg(feature = "wasm")]
+pub mod wasm;
 
 pub use crate::authorization::{
     AllowAllPolicy, AllowListPolicy, AuthorizationDecision, AuthorizationResult, CapabilityPolicy,
