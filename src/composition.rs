@@ -1,4 +1,4 @@
-use crate::core::{Artifact, ArtifactError, CreationMetadata, Provenance, sha256_prefixed};
+use crate::core::{sha256_prefixed, Artifact, ArtifactError, CreationMetadata, Provenance};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
