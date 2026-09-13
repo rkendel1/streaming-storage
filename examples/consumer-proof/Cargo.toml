@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 artifact = { path = "../.." }
-tempfile = "3"
+sha2 = "0.10"
 
 [dev-dependencies]
+uuid = { version = "1.0", features = ["v4"] }
