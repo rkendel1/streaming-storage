@@ -1,6 +1,6 @@
 use crate::core::{
-    sha256_prefixed, Artifact, ArtifactEntry, ArtifactError, CreationMetadata, EntryType,
-    Provenance, TransformationRecord,
+    Artifact, ArtifactEntry, ArtifactError, CreationMetadata, EntryType, Provenance,
+    TransformationRecord, sha256_prefixed,
 };
 use crate::pipeline::ContentResolver;
 use serde::Serialize;
