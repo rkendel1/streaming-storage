@@ -1,0 +1,7 @@
+[package]
+name = "artifact-transfer-boundary"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+artifact = { path = "../.." }
