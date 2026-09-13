@@ -2,6 +2,7 @@ use crate::core::{
     Artifact, ArtifactEntry, ArtifactError, Capability, CreationMetadata, EntryType, Provenance,
     canonical_capabilities, normalize_relative_path, sha256_prefixed,
 };
+use crate::transforms::ArtifactTransform;
 use serde::Serialize;
 use sha2::Digest;
 use std::collections::{BTreeMap, BTreeSet};
@@ -9,6 +10,7 @@ use std::fs;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -129,6 +131,11 @@ impl StageSpec {
     }
 }
 
+pub struct StageOutput {
+    pub artifact: Artifact,
+    pub resolver: Arc<dyn ContentResolver>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MaterializerSpec {
@@ -142,6 +149,122 @@ impl MaterializerSpec {
             Self::Zip => "zip",
             Self::Tar => "tar",
         }
+    }
+}
+
+pub struct PipelineExecutor;
+
+impl PipelineExecutor {
+    pub fn execute_stage(
+        artifact: &Artifact,
+        resolver: Arc<dyn ContentResolver>,
+        stage: &StageSpec,
+    ) -> Result<StageOutput, ArtifactError> {
+        match stage {
+            StageSpec::Select(spec) => Self::execute_select(artifact, resolver, spec),
+            StageSpec::Transform(spec) => Self::execute_transform(artifact, resolver, spec),
+            StageSpec::Redact(spec) => Self::execute_redact(artifact, resolver, spec),
+            StageSpec::Generate(spec) => Self::execute_generate(artifact, resolver, spec),
+            StageSpec::Manifest => Self::execute_manifest(artifact, resolver),
+            StageSpec::Validate => Self::execute_validate(artifact, resolver),
+        }
+    }
+
+    fn execute_select(
+        artifact: &Artifact,
+        resolver: Arc<dyn ContentResolver>,
+        spec: &SelectStageSpec,
+    ) -> Result<StageOutput, ArtifactError> {
+        let filtered_entries: Vec<ArtifactEntry> = artifact
+            .entries
+            .iter()
+            .filter(|entry| spec.allows(&entry.path))
+            .cloned()
+            .collect();
+
+        let new_artifact = Artifact::from_parts(
+            filtered_entries,
+            artifact.pipeline_identity.clone(),
+            artifact.capabilities.clone(),
+            artifact.provenance.clone(),
+        )?;
+
+        Ok(StageOutput {
+            artifact: new_artifact,
+            resolver,
+        })
+    }
+
+    fn execute_transform(
+        artifact: &Artifact,
+        resolver: Arc<dyn ContentResolver>,
+        spec: &TransformStageSpec,
+    ) -> Result<StageOutput, ArtifactError> {
+        use crate::transforms::PrefixTransform;
+
+        let transform = PrefixTransform::new(&spec.prefix);
+        let result = transform.apply(artifact, resolver.as_ref())?;
+
+        Ok(StageOutput {
+            artifact: result.artifact,
+            resolver: Arc::new(TransformedContentResolver::new(result.content_updates)),
+        })
+    }
+
+    fn execute_redact(
+        artifact: &Artifact,
+        resolver: Arc<dyn ContentResolver>,
+        spec: &RedactStageSpec,
+    ) -> Result<StageOutput, ArtifactError> {
+        use crate::transforms::RedactTransform;
+
+        let transform = RedactTransform::new(spec.paths.clone());
+        let result = transform.apply(artifact, resolver.as_ref())?;
+
+        Ok(StageOutput {
+            artifact: result.artifact,
+            resolver: Arc::new(RedactedContentResolver {
+                removed_paths: spec.paths.clone(),
+                inner: resolver,
+            }),
+        })
+    }
+
+    fn execute_generate(
+        artifact: &Artifact,
+        resolver: Arc<dyn ContentResolver>,
+        spec: &GenerateStageSpec,
+    ) -> Result<StageOutput, ArtifactError> {
+        use crate::transforms::GenerateTransform;
+
+        let transform = GenerateTransform::new(&spec.path, spec.content.as_bytes());
+        let result = transform.apply(artifact, resolver.as_ref())?;
+
+        Ok(StageOutput {
+            artifact: result.artifact,
+            resolver: Arc::new(TransformedContentResolver::new(result.content_updates)),
+        })
+    }
+
+    fn execute_manifest(
+        artifact: &Artifact,
+        resolver: Arc<dyn ContentResolver>,
+    ) -> Result<StageOutput, ArtifactError> {
+        Ok(StageOutput {
+            artifact: artifact.clone(),
+            resolver,
+        })
+    }
+
+    fn execute_validate(
+        artifact: &Artifact,
+        resolver: Arc<dyn ContentResolver>,
+    ) -> Result<StageOutput, ArtifactError> {
+        crate::core::validate_entry_layout(&artifact.entries)?;
+        Ok(StageOutput {
+            artifact: artifact.clone(),
+            resolver,
+        })
     }
 }
 
@@ -177,57 +300,55 @@ impl PipelineSpec {
     ) -> Result<SourceBackedArtifact, ArtifactError> {
         if self.source != SourceSpec::Directory {
             return Err(ArtifactError::InvalidState(
-                "Phase 1 only supports directory sources".to_string(),
+                "only directory sources are supported".to_string(),
             ));
         }
 
         self.validate_stage_sequence()?;
         let root = root.as_ref();
         let pipeline_identity = self.identity()?;
-        let discovered = DirectorySource::new(root)?.discover()?;
-        let mut state = PipelineState::new(discovered);
 
-        for stage in &self.stages {
-            state.stage_trace.push(stage.label().to_string());
-            match stage {
-                StageSpec::Select(spec) => state.apply_select(spec),
-                StageSpec::Transform(_) => {
-                    return Err(ArtifactError::InvalidState(
-                        "transform stages not yet supported in Phase 2 pipeline execution".to_string(),
-                    ))
-                }
-                StageSpec::Redact(_) => {
-                    return Err(ArtifactError::InvalidState(
-                        "redact stages not yet supported in Phase 2 pipeline execution".to_string(),
-                    ))
-                }
-                StageSpec::Generate(_) => {
-                    return Err(ArtifactError::InvalidState(
-                        "generate stages not yet supported in Phase 2 pipeline execution".to_string(),
-                    ))
-                }
-                StageSpec::Manifest => {
-                    state.generate_manifest_seed(&pipeline_identity, &self.capabilities)?
-                }
-                StageSpec::Validate => state.validate()?,
-            }
-        }
+        let directory = DirectorySource::new(root)?;
+        let discovered = directory.discover()?;
+
+        let mut state = PipelineState::new(discovered);
+        state.generate_manifest_seed(&pipeline_identity, &self.capabilities)?;
 
         let seed = state
             .manifest_seed
             .take()
             .ok_or(ArtifactError::MissingStageOutput("manifest"))?;
-        let artifact = Artifact::from_parts(
+
+        let initial_artifact = Artifact::from_parts(
             seed.entries,
-            pipeline_identity,
-            seed.capabilities,
-            seed.provenance,
+            pipeline_identity.clone(),
+            seed.capabilities.clone(),
+            seed.provenance.clone(),
         )?;
 
+        let source_backed = SourceBackedArtifact {
+            artifact: initial_artifact.clone(),
+            contents: seed.contents.clone(),
+            stage_trace: vec!["source".to_string()],
+            resolver: None,
+        };
+
+        let mut stage_trace = vec!["source".to_string()];
+        let mut current = StageOutput {
+            artifact: initial_artifact,
+            resolver: Arc::new(source_backed),
+        };
+
+        for stage in &self.stages {
+            stage_trace.push(stage.label().to_string());
+            current = PipelineExecutor::execute_stage(&current.artifact, current.resolver.clone(), stage)?;
+        }
+
         Ok(SourceBackedArtifact {
-            artifact,
+            artifact: current.artifact,
             contents: seed.contents,
-            stage_trace: state.stage_trace,
+            stage_trace,
+            resolver: Some(current.resolver),
         })
     }
 
@@ -312,11 +433,22 @@ impl<T: ContentResolver + ?Sized> EntryContentResolver for T {
     }
 }
 
-#[derive(Debug)]
 pub struct SourceBackedArtifact {
     artifact: Artifact,
     contents: BTreeMap<String, PathBuf>,
     stage_trace: Vec<String>,
+    resolver: Option<Arc<dyn ContentResolver>>,
+}
+
+impl std::fmt::Debug for SourceBackedArtifact {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SourceBackedArtifact")
+            .field("artifact", &self.artifact)
+            .field("contents", &self.contents)
+            .field("stage_trace", &self.stage_trace)
+            .field("resolver", &"<ContentResolver>")
+            .finish()
+    }
 }
 
 impl SourceBackedArtifact {
@@ -331,6 +463,10 @@ impl SourceBackedArtifact {
 
 impl ContentResolver for SourceBackedArtifact {
     fn resolve(&self, path: &str) -> Result<Box<dyn Read>, ArtifactError> {
+        if let Some(resolver) = &self.resolver {
+            return resolver.resolve(path);
+        }
+
         let source_path = self
             .contents
             .get(path)
@@ -551,6 +687,22 @@ fn hash_file(path: &Path) -> Result<String, ArtifactError> {
         let _ = write!(encoded, "{byte:02x}");
     }
     Ok(encoded)
+}
+
+struct RedactedContentResolver {
+    removed_paths: Vec<String>,
+    inner: Arc<dyn ContentResolver>,
+}
+
+impl ContentResolver for RedactedContentResolver {
+    fn resolve(&self, path: &str) -> Result<Box<dyn Read>, ArtifactError> {
+        if self.removed_paths.contains(&path.to_string()) {
+            return Err(ArtifactError::Materialization(format!(
+                "cannot resolve redacted path: {path}"
+            )));
+        }
+        self.inner.resolve(path)
+    }
 }
 
 #[derive(Debug)]

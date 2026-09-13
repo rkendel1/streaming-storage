@@ -18,7 +18,7 @@ fn pipeline_stages_execute_in_declared_order() {
         .build_from_directory(example_dir())
         .expect("pipeline should build example");
 
-    assert_eq!(built.stage_trace(), ["select", "manifest", "validate"]);
+    assert_eq!(built.stage_trace(), ["source", "select", "manifest", "validate"]);
 }
 
 #[test]
@@ -689,6 +689,326 @@ fn digest_for_bytes(value: &[u8]) -> String {
     let mut hasher = sha2::Sha256::new();
     sha2::Digest::update(&mut hasher, value);
     let digest = sha2::Digest::finalize(hasher);
+    let mut encoded = String::from("sha256:");
+    for byte in digest {
+        use std::fmt::Write as _;
+        let _ = write!(encoded, "{byte:02x}");
+    }
+    encoded
+}
+
+#[test]
+fn declarative_pipeline_with_prefix_transform() {
+    let pipeline = PipelineSpec {
+        source: SourceSpec::Directory,
+        stages: vec![
+            StageSpec::Select(SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid")),
+            StageSpec::Transform(artifact::TransformStageSpec::new("bundle").expect("prefix is valid")),
+            StageSpec::Manifest,
+            StageSpec::Validate,
+        ],
+        materializer: artifact::MaterializerSpec::Zip,
+        capabilities: vec![
+            Capability::new("filesystem.read", "1"),
+            Capability::new("manifest.generate", "1"),
+            Capability::new("artifact.validate", "1"),
+            Capability::new("package.zip", "1"),
+        ],
+    };
+
+    let built = pipeline
+        .build_from_directory(example_dir())
+        .expect("pipeline with transform should execute");
+
+    let artifact = built.artifact();
+    for entry in &artifact.entries {
+        assert!(
+            entry.path.starts_with("bundle/"),
+            "all entries should have bundle/ prefix, got {}",
+            entry.path
+        );
+    }
+
+    assert!(built.stage_trace().contains(&"transform".to_string()));
+}
+
+#[test]
+fn declarative_pipeline_with_redact_stage() {
+    let pipeline = PipelineSpec {
+        source: SourceSpec::Directory,
+        stages: vec![
+            StageSpec::Select(SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid")),
+            StageSpec::Redact(artifact::RedactStageSpec::new(vec!["README.md".to_string()]).expect("redact spec is valid")),
+            StageSpec::Manifest,
+            StageSpec::Validate,
+        ],
+        materializer: artifact::MaterializerSpec::Zip,
+        capabilities: vec![
+            Capability::new("filesystem.read", "1"),
+            Capability::new("manifest.generate", "1"),
+            Capability::new("artifact.validate", "1"),
+            Capability::new("package.zip", "1"),
+        ],
+    };
+
+    let built = pipeline
+        .build_from_directory(example_dir())
+        .expect("pipeline with redact should execute");
+
+    let artifact = built.artifact();
+    assert!(
+        artifact
+            .entries
+            .iter()
+            .all(|e| e.path != "README.md"),
+        "README.md should be redacted"
+    );
+
+    assert!(built.stage_trace().contains(&"redact".to_string()));
+}
+
+#[test]
+fn declarative_pipeline_with_generate_stage() {
+    let pipeline = PipelineSpec {
+        source: SourceSpec::Directory,
+        stages: vec![
+            StageSpec::Select(SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid")),
+            StageSpec::Generate(artifact::GenerateStageSpec::new("GENERATED.txt", "generated content").expect("generate spec is valid")),
+            StageSpec::Manifest,
+            StageSpec::Validate,
+        ],
+        materializer: artifact::MaterializerSpec::Zip,
+        capabilities: vec![
+            Capability::new("filesystem.read", "1"),
+            Capability::new("manifest.generate", "1"),
+            Capability::new("artifact.validate", "1"),
+            Capability::new("package.zip", "1"),
+        ],
+    };
+
+    let built = pipeline
+        .build_from_directory(example_dir())
+        .expect("pipeline with generate should execute");
+
+    let artifact = built.artifact();
+    assert!(
+        artifact.entries.iter().any(|e| e.path == "GENERATED.txt"),
+        "generated file should be in artifact"
+    );
+
+    assert!(built.stage_trace().contains(&"generate".to_string()));
+}
+
+#[test]
+fn declarative_pipeline_chaining_multiple_transforms() {
+    let pipeline = PipelineSpec {
+        source: SourceSpec::Directory,
+        stages: vec![
+            StageSpec::Select(SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid")),
+            StageSpec::Transform(artifact::TransformStageSpec::new("dist").expect("prefix is valid")),
+            StageSpec::Generate(artifact::GenerateStageSpec::new("dist/BUILD.txt", "built").expect("generate spec is valid")),
+            StageSpec::Manifest,
+            StageSpec::Validate,
+        ],
+        materializer: artifact::MaterializerSpec::Zip,
+        capabilities: vec![
+            Capability::new("filesystem.read", "1"),
+            Capability::new("manifest.generate", "1"),
+            Capability::new("artifact.validate", "1"),
+            Capability::new("package.zip", "1"),
+        ],
+    };
+
+    let built = pipeline
+        .build_from_directory(example_dir())
+        .expect("pipeline with chained transforms should execute");
+
+    let artifact = built.artifact();
+
+    for entry in &artifact.entries {
+        assert!(
+            entry.path.starts_with("dist/"),
+            "all entries should be prefixed, got {}",
+            entry.path
+        );
+    }
+
+    assert!(
+        artifact.entries.iter().any(|e| e.path == "dist/BUILD.txt"),
+        "generated file should exist with prefix"
+    );
+
+    assert_eq!(
+        built.stage_trace(),
+        &["source", "select", "transform", "generate", "manifest", "validate"]
+    );
+}
+
+#[test]
+fn stage_identity_is_deterministic() {
+    let stage_a = StageSpec::Transform(
+        artifact::TransformStageSpec::new("prefix").expect("valid")
+    );
+    let stage_b = StageSpec::Transform(
+        artifact::TransformStageSpec::new("prefix").expect("valid")
+    );
+    let stage_c = StageSpec::Transform(
+        artifact::TransformStageSpec::new("different").expect("valid")
+    );
+
+    let stage_a_id = stage_a.identity().expect("identity should compute");
+    let stage_b_id = stage_b.identity().expect("identity should compute");
+    let stage_c_id = stage_c.identity().expect("identity should compute");
+
+    assert_eq!(stage_a_id, stage_b_id, "same stage spec should have same identity");
+    assert_ne!(stage_a_id, stage_c_id, "different parameters should have different identity");
+}
+
+#[test]
+fn same_declarative_pipeline_produces_same_artifact() {
+    let pipeline = PipelineSpec {
+        source: SourceSpec::Directory,
+        stages: vec![
+            StageSpec::Select(SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid")),
+            StageSpec::Transform(artifact::TransformStageSpec::new("archive").expect("prefix is valid")),
+            StageSpec::Manifest,
+            StageSpec::Validate,
+        ],
+        materializer: artifact::MaterializerSpec::Zip,
+        capabilities: vec![
+            Capability::new("filesystem.read", "1"),
+            Capability::new("manifest.generate", "1"),
+            Capability::new("artifact.validate", "1"),
+            Capability::new("package.zip", "1"),
+        ],
+    };
+
+    let first = pipeline
+        .build_from_directory(example_dir())
+        .expect("first execution should succeed");
+    let second = pipeline
+        .build_from_directory(example_dir())
+        .expect("second execution should succeed");
+
+    assert_eq!(
+        first.artifact().identity,
+        second.artifact().identity,
+        "same pipeline spec should produce same artifact identity"
+    );
+
+    assert_eq!(
+        first.artifact().entries.len(),
+        second.artifact().entries.len(),
+        "same pipeline spec should produce same entry count"
+    );
+}
+
+#[test]
+fn transformed_artifact_materializes_through_declarative_pipeline() {
+    let pipeline = PipelineSpec {
+        source: SourceSpec::Directory,
+        stages: vec![
+            StageSpec::Select(SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid")),
+            StageSpec::Transform(artifact::TransformStageSpec::new("bundle").expect("prefix is valid")),
+            StageSpec::Manifest,
+            StageSpec::Validate,
+        ],
+        materializer: artifact::MaterializerSpec::Zip,
+        capabilities: vec![
+            Capability::new("filesystem.read", "1"),
+            Capability::new("manifest.generate", "1"),
+            Capability::new("artifact.validate", "1"),
+            Capability::new("package.zip", "1"),
+        ],
+    };
+
+    let built = pipeline
+        .build_from_directory(example_dir())
+        .expect("pipeline should execute");
+
+    let artifact = built.artifact();
+    let zip_bytes = ZipMaterializer
+        .materialize_to_vec(artifact, &built)
+        .expect("should materialize to ZIP");
+
+    assert!(!zip_bytes.is_empty());
+}
+
+#[test]
+fn redacted_content_cannot_be_resolved() {
+    let pipeline = PipelineSpec {
+        source: SourceSpec::Directory,
+        stages: vec![
+            StageSpec::Select(SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid")),
+            StageSpec::Redact(artifact::RedactStageSpec::new(vec!["README.md".to_string()]).expect("redact spec is valid")),
+            StageSpec::Manifest,
+            StageSpec::Validate,
+        ],
+        materializer: artifact::MaterializerSpec::Zip,
+        capabilities: vec![
+            Capability::new("filesystem.read", "1"),
+            Capability::new("manifest.generate", "1"),
+            Capability::new("artifact.validate", "1"),
+            Capability::new("package.zip", "1"),
+        ],
+    };
+
+    let built = pipeline
+        .build_from_directory(example_dir())
+        .expect("pipeline should execute");
+
+    let result = built.resolve("README.md");
+    assert!(
+        result.is_err(),
+        "should not be able to resolve redacted content"
+    );
+}
+
+#[test]
+fn declarative_pipeline_round_trip_preserves_identity() {
+    let original_pipeline = PipelineSpec {
+        source: SourceSpec::Directory,
+        stages: vec![
+            StageSpec::Select(SelectStageSpec::new(vec![], vec![]).expect("empty select should be valid")),
+            StageSpec::Transform(artifact::TransformStageSpec::new("dist").expect("prefix is valid")),
+            StageSpec::Manifest,
+            StageSpec::Validate,
+        ],
+        materializer: artifact::MaterializerSpec::Zip,
+        capabilities: vec![
+            Capability::new("filesystem.read", "1"),
+            Capability::new("manifest.generate", "1"),
+            Capability::new("artifact.validate", "1"),
+            Capability::new("package.zip", "1"),
+        ],
+    };
+
+    let original_bytes = original_pipeline
+        .to_canonical_bytes()
+        .expect("should serialize");
+    let original_identity = original_pipeline.identity().expect("should have identity");
+
+    let rebuilt_pipeline = serde_json::from_slice::<serde_json::Value>(&original_bytes)
+        .expect("should deserialize");
+    let rebuilt_bytes = serde_json::to_vec(&rebuilt_pipeline).expect("should reserialize");
+
+    assert_eq!(
+        original_bytes, rebuilt_bytes,
+        "canonical bytes should round-trip identically"
+    );
+
+    let rebuilt_identity = sha2_digest(&rebuilt_bytes);
+    assert_eq!(
+        original_identity, rebuilt_identity,
+        "pipeline identity should be preserved through round-trip"
+    );
+}
+
+fn sha2_digest(data: &[u8]) -> String {
+    use sha2::Digest;
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(data);
+    let digest = hasher.finalize();
     let mut encoded = String::from("sha256:");
     for byte in digest {
         use std::fmt::Write as _;
