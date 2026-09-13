@@ -59,7 +59,13 @@ impl LocalArtifactStore {
         for entry in &artifact.entries {
             let content_path = self.content_path(&entry.content_digest)?;
             verify_content(&content_path, entry)?;
-            content_paths.insert(entry.path.clone(), content_path);
+            content_paths.insert(
+                entry.path.clone(),
+                RecoveredContent {
+                    path: content_path,
+                    entry: entry.clone(),
+                },
+            );
         }
 
         Ok(RecoveredArtifact {
@@ -120,7 +126,13 @@ impl LocalArtifactStore {
 #[derive(Clone, Debug)]
 pub struct RecoveredArtifact {
     artifact: Artifact,
-    content_paths: BTreeMap<String, PathBuf>,
+    content_paths: BTreeMap<String, RecoveredContent>,
+}
+
+#[derive(Clone, Debug)]
+struct RecoveredContent {
+    path: PathBuf,
+    entry: ArtifactEntry,
 }
 
 impl RecoveredArtifact {
@@ -135,8 +147,9 @@ impl ContentResolver for RecoveredArtifact {
             .content_paths
             .get(path)
             .ok_or_else(|| ArtifactError::Materialization(format!("missing content for {path}")))?;
-        let file =
-            File::open(content_path).map_err(|source| ArtifactError::io(content_path, source))?;
+        verify_content(&content_path.path, &content_path.entry)?;
+        let file = File::open(&content_path.path)
+            .map_err(|source| ArtifactError::io(&content_path.path, source))?;
         Ok(Box::new(file))
     }
 }
