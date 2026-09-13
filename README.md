@@ -153,6 +153,8 @@ cargo test
 ## Documentation
 
 - `PRODUCT-DEFINITION.md` defines the current product boundary.
+- `PRODUCT-EXAMPLES.md` gives market-facing workflow examples.
 - `PHASE-15-KERNEL.md` records the artifact kernel and semantic boundary analysis.
+- `PHASE-16-PRODUCT-VALIDATION.md` tests the kernel against concrete external workflows.
 - `PHASE-14-BOUNDARY-ANALYSIS.md` records the prior boundary investigation.
 - `PHASE-14-TAXONOMY-REVISION.md` records why Contextual is an external consumption architecture.
