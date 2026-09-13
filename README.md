@@ -31,6 +31,7 @@ The core product boundary is:
 - preserve artifact creation provenance;
 - inspect artifacts and pipelines without requiring archive output;
 - transform logical artifacts into new logical artifacts;
+- persist and recover logical artifacts through an explicit local durable store;
 - materialize logical artifacts to physical formats such as ZIP and TAR;
 - produce execution evidence for engine-performed operations.
 
