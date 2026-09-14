@@ -75,6 +75,46 @@ p {
   gap: 12px;
 }
 
+.source-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.source-card {
+  border: 1px solid #d7deea;
+  border-radius: 16px;
+  color: #50607a;
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 16px;
+}
+
+.source-card > span {
+  color: #172033;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.local-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.file-button {
+  background: #1769e0;
+  border-radius: 10px;
+  color: #fff;
+  cursor: pointer;
+  padding: 10px 12px;
+}
+
+input[type="file"] {
+  display: none;
+}
+
 .panel-heading {
   align-items: center;
   justify-content: space-between;
@@ -118,6 +158,11 @@ button {
 
 input[type="text"] {
   min-width: 320px;
+}
+
+input[type="url"] {
+  min-width: 0;
+  width: calc(100% - 26px);
 }
 
 button {
@@ -218,7 +263,8 @@ fieldset {
 
 @media (max-width: 900px) {
   .boundary-map,
-  .flow-summary {
+  .flow-summary,
+  .source-grid {
     grid-template-columns: 1fr;
   }
 

@@ -10,6 +10,7 @@ const state = {
 
 const statusLine = document.querySelector('#status');
 const sourcePath = document.querySelector('#source-path');
+const sourceSummary = document.querySelector('#source-summary');
 const sourceTree = document.querySelector('#source-tree');
 const artifactSource = document.querySelector('#artifact-source');
 const pipelineCapabilities = document.querySelector('#pipeline-capabilities');
@@ -55,11 +56,32 @@ function bytes(value) {
 }
 
 function renderSource(source) {
+  sourceSummary.hidden = false;
+  sourceSummary.innerHTML = receiptGrid([
+    ['Source', source.display_name],
+    ['Kind', source.source_kind],
+    ['Branch', source.branch || '—'],
+    ['Detected', source.detected || source.detail],
+    ['Files', source.total_entries],
+    ['Size', bytes(source.total_size_bytes)],
+  ]);
   sourceTree.hidden = false;
-  sourceTree.textContent = `${source.root}/\n${source.entries.map((entry) => `  ${entry}`).join('\n')}`;
-  artifactSource.textContent = source.root;
+  sourceTree.innerHTML = renderTree(source);
+  artifactSource.textContent = source.display_name;
   buildButton.disabled = false;
   enablePanel('#artifact-panel', true);
+}
+
+function renderTree(source) {
+  const lines = [`${escapeHtml(source.display_name)}/`];
+  for (const entry of source.entries) {
+    const depth = entry.split('/').filter(Boolean).length - (entry.endsWith('/') ? 1 : 0);
+    lines.push(`${'  '.repeat(Math.max(depth, 0))}${escapeHtml(entry)}`);
+  }
+  if (source.total_entries > source.entries.length) {
+    lines.push(`… ${source.total_entries - source.entries.length} more entries`);
+  }
+  return `<details open><summary>SOURCE (${source.total_entries} entries, ${bytes(source.total_size_bytes)})</summary><pre>${lines.join('\n')}</pre></details>`;
 }
 
 function renderCapabilities(capabilities) {
@@ -153,9 +175,16 @@ function selectedRadio(name) {
 
 document.querySelector('#import-form').addEventListener('submit', async (event) => {
   event.preventDefault();
+  const submitter = event.submitter;
+  const field = submitter?.dataset.import || 'source-path';
+  const value = document.querySelector(`#${field}`).value.trim();
+  if (!value) {
+    setStatus('Choose a source before importing.');
+    return;
+  }
   setStatus('Importing source…');
   try {
-    state.source = await api('/api/import', { path: sourcePath.value });
+    state.source = await api('/api/import', { path: value });
     renderSource(state.source);
     setStatus('Source imported.');
   } catch (error) {
@@ -221,6 +250,33 @@ document.querySelector('#start-new').addEventListener('click', async () => {
 });
 
 document.querySelector('#change-source').addEventListener('click', () => sourcePath.focus());
+
+function summarizeBrowserLocalSelection(input, label) {
+  const files = Array.from(input.files || []);
+  if (files.length === 0) return;
+  const size = files.reduce((total, file) => total + file.size, 0);
+  sourceSummary.hidden = false;
+  sourceSummary.innerHTML = receiptGrid([
+    ['Source', label],
+    ['Kind', 'Local'],
+    ['Files', files.length],
+    ['Size', bytes(size)],
+    ['Engine import', 'Use a workbench host path above to build the artifact'],
+  ]);
+  sourceTree.hidden = false;
+  sourceTree.innerHTML = `<details open><summary>LOCAL SELECTION</summary><pre>${files
+    .slice(0, 64)
+    .map((file) => escapeHtml(file.webkitRelativePath || file.name))
+    .join('\n')}</pre></details>`;
+  setStatus('Local files selected. Browser-selected content is previewed; import a host path to build with the engine.');
+}
+
+document
+  .querySelector('#local-files')
+  .addEventListener('change', (event) => summarizeBrowserLocalSelection(event.target, 'Selected files'));
+document
+  .querySelector('#local-folder')
+  .addEventListener('change', (event) => summarizeBrowserLocalSelection(event.target, 'Selected folder'));
 
 const dropZone = document.querySelector('#drop-zone');
 dropZone.addEventListener('dragover', (event) => {

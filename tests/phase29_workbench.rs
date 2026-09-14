@@ -44,7 +44,7 @@ fn workbench_exercises_zip_to_local_runtime_receipt() {
     let imported = workbench
         .import_source(source.path())
         .expect("source import should succeed");
-    assert_eq!(imported.source_kind, "directory");
+    assert_eq!(imported.source_kind, "Local");
     assert!(imported.entries.iter().any(|entry| entry == "bin/"));
     assert!(imported.entries.iter().any(|entry| entry == "bin/app"));
 
@@ -101,6 +101,48 @@ fn workbench_exercises_zip_to_local_runtime_receipt() {
         .expect("second receipt should include execution");
     assert_eq!(second_receipt.artifact.identity, artifact.identity);
     assert_ne!(first_execution.identity, second_execution.identity);
+}
+
+#[test]
+fn source_import_distinguishes_local_and_unsupported_remote_inputs() {
+    let source = fixture_source();
+    let local_file = source.path().join("README.md");
+    let (mut workbench, _store, _outputs) = workbench();
+
+    let imported_file = workbench
+        .import_source(&local_file)
+        .expect("local files should be staged as source input");
+    assert_eq!(imported_file.source_kind, "Local");
+    assert_eq!(imported_file.display_name, "README.md");
+    assert!(imported_file.entries.iter().any(|entry| entry == "README.md"));
+    assert!(imported_file.total_size_bytes > 0);
+
+    let artifact = workbench
+        .build_artifact(BuildOptions::default())
+        .expect("staged local file source should build through the engine");
+    assert!(artifact.identity.starts_with("sha256:"));
+
+    assert!(
+        workbench
+            .import_source("http://example.com/artifact.zip")
+            .expect_err("remote URLs must require HTTPS")
+            .to_string()
+            .contains("HTTPS")
+    );
+    assert!(
+        workbench
+            .import_source("https://example.com/")
+            .expect_err("arbitrary webpages are not artifacts")
+            .to_string()
+            .contains("direct downloadable .zip")
+    );
+    assert!(
+        workbench
+            .import_source("https://github.com/rkendel1/streaming-storage/tree/main")
+            .expect_err("GitHub importer should accept repository URLs, not arbitrary pages")
+            .to_string()
+            .contains("repository URL")
+    );
 }
 
 #[test]
@@ -222,8 +264,13 @@ fn persisted_artifact_can_be_recovered_after_restarting_operation() {
 #[test]
 fn browser_ui_does_not_calculate_identity_or_keep_registry() {
     let app = include_str!("../examples/artifact-workbench/src/ui/app.js");
+    let index = include_str!("../examples/artifact-workbench/src/ui/index.html");
     assert!(!app.contains("crypto.subtle"));
     assert!(!app.contains("createHash"));
     assert!(!app.contains("artifactRegistry"));
     assert!(!app.contains("artifactCache"));
+    assert!(index.contains("https://github.com/org/repo"));
+    assert!(index.contains("https://example.com/artifact.zip"));
+    assert!(index.contains("Choose files"));
+    assert!(index.contains("Choose folder"));
 }
