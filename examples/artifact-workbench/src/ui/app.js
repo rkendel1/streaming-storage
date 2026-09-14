@@ -279,16 +279,18 @@ document
   .addEventListener('change', (event) => summarizeBrowserLocalSelection(event.target, 'Selected folder'));
 
 const dropZone = document.querySelector('#drop-zone');
-dropZone.addEventListener('dragover', (event) => {
-  event.preventDefault();
-  dropZone.classList.add('dragging');
-});
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragging'));
-dropZone.addEventListener('drop', (event) => {
-  event.preventDefault();
-  dropZone.classList.remove('dragging');
-  setStatus('Browser directory drops cannot expose a trusted server path yet. Use Import Source.');
-});
+if (dropZone) {
+  dropZone.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    dropZone.classList.add('dragging');
+  });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragging'));
+  dropZone.addEventListener('drop', (event) => {
+    event.preventDefault();
+    dropZone.classList.remove('dragging');
+    setStatus('Browser directory drops cannot expose a trusted server path yet. Use Import Source.');
+  });
+}
 
 api('/api/capabilities')
   .then(renderCapabilities)

@@ -612,7 +612,16 @@ fn execution_view(execution: RuntimeExecution) -> ExecutionView {
 
 fn acquire_source(input: &str, staging_root: &Path) -> Result<AcquiredSource, WorkbenchError> {
     if input.starts_with("https://github.com/") {
-        return acquire_github_source(input, staging_root);
+        return if is_github_repository_url(input) {
+            acquire_github_source(input, staging_root)
+        } else if looks_downloadable(input) {
+            acquire_direct_url(input, staging_root)
+        } else {
+            Err(WorkbenchError::InvalidSelection(
+                "GitHub source must be a repository URL such as https://github.com/owner/repo"
+                    .to_string(),
+            ))
+        };
     }
     if input.starts_with("http://") {
         return Err(WorkbenchError::InvalidSelection(
@@ -701,9 +710,6 @@ fn acquire_github_source(
 }
 
 fn acquire_direct_url(input: &str, staging_root: &Path) -> Result<AcquiredSource, WorkbenchError> {
-    if input.starts_with("https://github.com/") {
-        return acquire_github_source(input, staging_root);
-    }
     if !looks_downloadable(input) {
         return Err(WorkbenchError::InvalidSelection(
             "unsupported URL: provide a direct downloadable .zip archive".to_string(),
@@ -719,6 +725,10 @@ fn acquire_direct_url(input: &str, staging_root: &Path) -> Result<AcquiredSource
     )?;
     view.detail = "Direct downloadable source archive".to_string();
     Ok(AcquiredSource { root, view })
+}
+
+fn is_github_repository_url(input: &str) -> bool {
+    parse_github_repository(input).is_ok()
 }
 
 fn parse_github_repository(input: &str) -> Result<(String, String), WorkbenchError> {
