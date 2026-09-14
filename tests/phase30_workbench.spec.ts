@@ -76,6 +76,8 @@ test('captures expanded output materialization receipts', async ({ page }) => {
   await expect(page.locator('input[name="output"][value="raw-file"]')).toBeDisabled();
   await expect(page.locator('input[name="output"][value="wasm-component"]')).toBeDisabled();
   await expect(page.locator('input[name="output"][value="iso"]')).toBeDisabled();
+  await expect(page.locator('#output-raw-file-detail')).toContainText('exactly one file');
+  await expect(page.locator('#output-wasm-component-detail')).toContainText('exactly one file');
   await screenshot(page, '30-output-picker.png');
   await screenshot(page, '30-portable-outputs.png');
   await screenshot(page, '30-runtime-outputs.png');

@@ -122,9 +122,11 @@ function renderTargetOptions(options) {
 }
 
 function renderOption(name, option) {
+  const baseId = `${name}-${option.id}`;
   const label = document.createElement('label');
   label.className = 'option';
   const input = document.createElement('input');
+  input.id = baseId;
   input.type = 'radio';
   input.name = name;
   input.value = option.id;
@@ -135,9 +137,12 @@ function renderOption(name, option) {
   badge.className = `state-badge ${option.state}`;
   badge.textContent = stateLabel(option.state);
   const description = document.createElement('small');
+  description.id = `${baseId}-description`;
   description.textContent = option.description;
   const detail = document.createElement('small');
+  detail.id = `${baseId}-detail`;
   detail.textContent = option.detail;
+  input.setAttribute('aria-describedby', `${description.id} ${detail.id}`);
   label.append(input, text, badge, description, detail);
   return label;
 }

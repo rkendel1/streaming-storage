@@ -4,6 +4,8 @@ use sha1::{Digest, Sha1};
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Read;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -31,7 +33,17 @@ impl GitTreeMaterializer {
             }
             let bytes = read_entry_bytes(resolver, &entry.path, entry.size, &entry.content_digest)?;
             fs::write(&path, &bytes).map_err(|source| ArtifactError::io(&path, source))?;
-            tree.insert_file(&entry.path, git_blob_oid(&bytes)?);
+            let mode = file_mode(&entry.path, &bytes);
+            #[cfg(unix)]
+            if mode == GitFileMode::Executable {
+                let mut permissions = fs::metadata(&path)
+                    .map_err(|source| ArtifactError::io(&path, source))?
+                    .permissions();
+                permissions.set_mode(0o755);
+                fs::set_permissions(&path, permissions)
+                    .map_err(|source| ArtifactError::io(&path, source))?;
+            }
+            tree.insert_file(&entry.path, git_blob_oid(&bytes)?, mode);
         }
 
         Ok(MaterializationResult {
@@ -49,8 +61,26 @@ struct TreeNode {
 }
 
 enum GitNode {
-    Blob(String),
+    Blob {
+        oid: String,
+        mode: GitFileMode,
+    },
     Tree(TreeNode),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GitFileMode {
+    Regular,
+    Executable,
+}
+
+impl GitFileMode {
+    fn tree_mode(self) -> &'static str {
+        match self {
+            Self::Regular => "100644",
+            Self::Executable => "100755",
+        }
+    }
 }
 
 impl Default for GitNode {
@@ -60,12 +90,17 @@ impl Default for GitNode {
 }
 
 impl TreeNode {
-    fn insert_file(&mut self, path: &str, oid: String) {
+    fn insert_file(&mut self, path: &str, oid: String, mode: GitFileMode) {
         let mut parts = path.split('/').peekable();
-        self.insert_parts(&mut parts, oid);
+        self.insert_parts(&mut parts, oid, mode);
     }
 
-    fn insert_parts<'a, I>(&mut self, parts: &mut std::iter::Peekable<I>, oid: String)
+    fn insert_parts<'a, I>(
+        &mut self,
+        parts: &mut std::iter::Peekable<I>,
+        oid: String,
+        mode: GitFileMode,
+    )
     where
         I: Iterator<Item = &'a str>,
     {
@@ -73,7 +108,8 @@ impl TreeNode {
             return;
         };
         if parts.peek().is_none() {
-            self.children.insert(part.to_string(), GitNode::Blob(oid));
+            self.children
+                .insert(part.to_string(), GitNode::Blob { oid, mode });
             return;
         }
         let child = self
@@ -83,15 +119,15 @@ impl TreeNode {
         let GitNode::Tree(tree) = child else {
             return;
         };
-        tree.insert_parts(parts, oid);
+        tree.insert_parts(parts, oid, mode);
     }
 
     fn oid(&self) -> Result<String, ArtifactError> {
         let mut body = Vec::new();
         for (name, node) in &self.children {
             let (mode, oid) = match node {
-                GitNode::Blob(oid) => ("100644", oid.clone()),
-                GitNode::Tree(tree) => ("40000", tree.oid()?),
+                GitNode::Blob { oid, mode } => (mode.tree_mode(), oid.clone()),
+                GitNode::Tree(tree) => ("040000", tree.oid()?),
             };
             body.extend_from_slice(mode.as_bytes());
             body.push(b' ');
@@ -165,4 +201,12 @@ fn read_entry_bytes<R: ContentResolver>(
         )));
     }
     Ok(bytes)
+}
+
+fn file_mode(path: &str, bytes: &[u8]) -> GitFileMode {
+    if path.starts_with("bin/") || bytes.starts_with(b"#!") {
+        GitFileMode::Executable
+    } else {
+        GitFileMode::Regular
+    }
 }
