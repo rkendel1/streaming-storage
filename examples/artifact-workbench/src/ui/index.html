@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Artifact Workbench</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <p class="eyebrow">Artifact Engine</p>
+        <h1>Artifact Workbench</h1>
+        <p>One continuous operation from source import to receipt, using the existing engine boundaries.</p>
+      </header>
+
+      <nav class="boundary-map" aria-label="Artifact lifecycle">
+        <span>IMPORT SOURCE</span>
+        <span>CONFIGURE</span>
+        <span>BUILD ARTIFACT</span>
+        <span>SELECT OUTPUT</span>
+        <span>SELECT TARGET</span>
+        <span>MATERIALIZE / EXECUTE</span>
+        <span>RECEIVE RESULT</span>
+      </nav>
+
+      <section class="panel" id="source-panel">
+        <div class="panel-heading">
+          <h2>Source</h2>
+          <button id="change-source" class="link-button" type="button">Change</button>
+        </div>
+        <div class="drop-zone" id="drop-zone">
+          <strong>Drop files or a folder here</strong>
+          <span>or import a source path from this workbench host</span>
+        </div>
+        <form id="import-form" class="inline-form">
+          <label for="source-path">Source path</label>
+          <input id="source-path" name="source-path" type="text" placeholder="/absolute/path/to/my-app" required />
+          <button type="submit">Import Source</button>
+        </form>
+        <pre id="source-tree" class="tree" hidden></pre>
+      </section>
+
+      <section class="panel" id="artifact-panel" aria-disabled="true">
+        <h2>Artifact</h2>
+        <dl class="config-grid">
+          <dt>Source</dt>
+          <dd id="artifact-source">Not imported</dd>
+          <dt>Pipeline</dt>
+          <dd><select id="pipeline-select"><option value="default">Default</option></select></dd>
+          <dt>Capabilities</dt>
+          <dd id="pipeline-capabilities">Loading…</dd>
+          <dt>Semantic declaration</dt>
+          <dd><input id="semantic-declaration" type="text" placeholder="Unavailable in default pipeline" disabled /></dd>
+        </dl>
+        <button id="build-artifact" type="button" disabled>Build Artifact</button>
+        <article id="artifact-created" class="receipt-card" hidden></article>
+      </section>
+
+      <section class="panel" id="output-panel" aria-disabled="true">
+        <h2>Output</h2>
+        <p>Choose output. These options are driven by actual materializer availability.</p>
+        <fieldset id="output-options"></fieldset>
+        <button id="continue-output" type="button" disabled>Continue</button>
+        <article id="representation-created" class="receipt-card" hidden></article>
+      </section>
+
+      <section class="panel" id="target-panel" aria-disabled="true">
+        <h2>Target</h2>
+        <p>Target is separate from output.</p>
+        <div class="flow-summary">
+          <div><span>Artifact</span><strong id="flow-artifact">—</strong></div>
+          <div><span>Output</span><strong id="flow-output">—</strong></div>
+          <div><span>Target</span><strong id="flow-target">—</strong></div>
+        </div>
+        <fieldset id="target-options"></fieldset>
+        <label class="runtime-input" for="executable-path">Runtime executable path</label>
+        <input id="executable-path" type="text" value="bin/app" />
+        <button id="run-artifact" type="button" disabled>Deploy / Run</button>
+      </section>
+
+      <section class="panel" id="receipt-panel" aria-disabled="true">
+        <h2>Artifact Complete</h2>
+        <article id="receipt" class="receipt-card"></article>
+        <div class="actions">
+          <button id="download-output" type="button" disabled>Download Output</button>
+          <button id="run-again" type="button" disabled>Run Again</button>
+          <button id="start-new" type="button">Start New Artifact</button>
+        </div>
+      </section>
+
+      <p id="status" role="status"></p>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>

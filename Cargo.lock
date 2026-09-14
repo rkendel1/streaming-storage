@@ -65,6 +65,7 @@ dependencies = [
 name = "artifact"
 version = "0.1.0"
 dependencies = [
+ "artifact-workbench",
  "clap",
  "serde",
  "serde_json",
@@ -73,6 +74,25 @@ dependencies = [
  "tempfile",
  "wasm-bindgen",
  "zip",
+]
+
+[[package]]
+name = "artifact-runtime-consumer"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
+ "zip",
+]
+
+[[package]]
+name = "artifact-workbench"
+version = "0.1.0"
+dependencies = [
+ "artifact",
+ "artifact-runtime-consumer",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
