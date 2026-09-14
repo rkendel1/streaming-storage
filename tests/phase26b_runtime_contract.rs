@@ -1,6 +1,6 @@
 use artifact::{
-    core::sha256_prefixed, EntryContentResolver, LocalArtifactStore, RecipeSpec, RecoveredArtifact,
-    ZipMaterializer,
+    EntryContentResolver, LocalArtifactStore, RecipeSpec, RecoveredArtifact, ZipMaterializer,
+    core::sha256_prefixed,
 };
 use runtime_contract::oci_consumer::{OciConsumer, OciMaterialization};
 use runtime_contract::{
@@ -248,14 +248,18 @@ fn runtime_contract_captures_stdout_and_stderr() {
     let zip_execution = execute_zip(&prepared, "success", "zip");
     let oci_execution = execute_oci(&prepared, "success", "oci");
 
-    assert!(zip_execution
-        .stdout
-        .lines()
-        .any(|line| line.trim() == "zip-runtime"));
-    assert!(oci_execution
-        .stdout
-        .lines()
-        .any(|line| line.trim() == "oci-runtime"));
+    assert!(
+        zip_execution
+            .stdout
+            .lines()
+            .any(|line| line.trim() == "zip-runtime")
+    );
+    assert!(
+        oci_execution
+            .stdout
+            .lines()
+            .any(|line| line.trim() == "oci-runtime")
+    );
     assert!(zip_execution.stderr.contains("phase26b stderr"));
     assert!(oci_execution.stderr.contains("phase26b stderr"));
 }

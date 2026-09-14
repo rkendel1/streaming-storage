@@ -1,5 +1,5 @@
-use crate::core::{Capability, ArtifactError};
-use crate::pipeline::{PipelineSpec, StageSpec, MaterializerSpec};
+use crate::core::{ArtifactError, Capability};
+use crate::pipeline::{MaterializerSpec, PipelineSpec, StageSpec};
 use serde::Serialize;
 
 #[derive(Clone, Debug, Serialize)]
@@ -22,8 +22,10 @@ impl PipelineSpec {
         self.validate_stage_sequence()?;
 
         let pipeline_identity = self.identity()?;
-        let canonical_pipeline_json = String::from_utf8(self.to_canonical_bytes()?)
-            .map_err(|_| ArtifactError::InvalidState("pipeline JSON contains invalid UTF-8".to_string()))?;
+        let canonical_pipeline_json =
+            String::from_utf8(self.to_canonical_bytes()?).map_err(|_| {
+                ArtifactError::InvalidState("pipeline JSON contains invalid UTF-8".to_string())
+            })?;
 
         let mut stages = Vec::new();
         for stage in &self.stages {

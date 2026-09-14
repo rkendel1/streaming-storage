@@ -1,4 +1,4 @@
-use crate::authorization::{CapabilityPolicy, AuthorizationDecision, ExecutionEvidence};
+use crate::authorization::{AuthorizationDecision, CapabilityPolicy, ExecutionEvidence};
 use crate::core::{Artifact, ArtifactError, Capability};
 use crate::pipeline::{PipelineInspection, PipelineSpec};
 use crate::recipes::RecipeSpec;
@@ -146,7 +146,11 @@ impl PublicExecutionEvidence {
             allowed: self.evidence.authorization_decision.is_allowed(),
             requested_capabilities: self.evidence.requested_capabilities.clone(),
             granted_capabilities: self.evidence.granted_capabilities.clone(),
-            denied_capabilities: self.evidence.authorization_decision.denied_capabilities.clone(),
+            denied_capabilities: self
+                .evidence
+                .authorization_decision
+                .denied_capabilities
+                .clone(),
         }
     }
 

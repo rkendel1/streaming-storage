@@ -1,4 +1,6 @@
-use crate::core::{Artifact, ArtifactError, MaterializationResult, sha256_prefixed, validate_entry_layout};
+use crate::core::{
+    Artifact, ArtifactError, MaterializationResult, sha256_prefixed, validate_entry_layout,
+};
 use crate::pipeline::ContentResolver;
 use std::fs::File;
 use std::io::Write;

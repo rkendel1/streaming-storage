@@ -1,7 +1,6 @@
 use artifact::{
-    core::sha256_prefixed,
     Artifact, ArtifactEntry, CreationMetadata, EntryType, MemoryContentResolver, Provenance,
-    TarMaterializer, ZipMaterializer,
+    TarMaterializer, ZipMaterializer, core::sha256_prefixed,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -111,10 +110,22 @@ fn materialization_is_deterministic_per_output_type() {
         fs::read(&tar_output_first).expect("first tar path bytes should be readable");
     let tar_path_bytes_second =
         fs::read(&tar_output_second).expect("second tar path bytes should be readable");
-    assert_eq!(zip_path_result.output_digest, sha256_prefixed(&zip_path_bytes));
-    assert_eq!(tar_path_result.output_digest, sha256_prefixed(&tar_path_bytes));
-    assert_eq!(zip_path_result.output_digest, zip_path_result_second.output_digest);
-    assert_eq!(tar_path_result.output_digest, tar_path_result_second.output_digest);
+    assert_eq!(
+        zip_path_result.output_digest,
+        sha256_prefixed(&zip_path_bytes)
+    );
+    assert_eq!(
+        tar_path_result.output_digest,
+        sha256_prefixed(&tar_path_bytes)
+    );
+    assert_eq!(
+        zip_path_result.output_digest,
+        zip_path_result_second.output_digest
+    );
+    assert_eq!(
+        tar_path_result.output_digest,
+        tar_path_result_second.output_digest
+    );
     assert_eq!(zip_path_bytes, zip_path_bytes_second);
     assert_eq!(tar_path_bytes, tar_path_bytes_second);
 }

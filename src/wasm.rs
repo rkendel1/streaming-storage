@@ -1,10 +1,10 @@
+use crate::authorization::{AllowAllPolicy, CapabilityPolicy};
+use crate::core::Artifact;
+use crate::pipeline::PipelineSpec;
+use crate::recipes::{RecipeSpec, RecipeType};
+use serde_json::json;
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
-use crate::recipes::{RecipeSpec, RecipeType};
-use crate::core::Artifact;
-use crate::authorization::{AllowAllPolicy, CapabilityPolicy};
-use crate::pipeline::PipelineSpec;
-use serde_json::json;
 
 #[cfg(feature = "wasm")]
 #[wasm_bindgen]
@@ -44,7 +44,9 @@ pub struct WasmArtifactRecipe {
 impl WasmArtifactRecipe {
     #[wasm_bindgen]
     pub fn compile(&self) -> Result<WasmArtifactPipeline, String> {
-        let pipeline = self.recipe.compile()
+        let pipeline = self
+            .recipe
+            .compile()
             .map_err(|e| format!("Compilation failed: {}", e))?;
         Ok(WasmArtifactPipeline { pipeline })
     }
@@ -66,7 +68,9 @@ pub struct WasmArtifactPipeline {
 impl WasmArtifactPipeline {
     #[wasm_bindgen]
     pub fn inspect(&self) -> Result<String, String> {
-        let inspection = self.pipeline.inspect()
+        let inspection = self
+            .pipeline
+            .inspect()
             .map_err(|e| format!("Inspection failed: {}", e))?;
 
         let result = json!({
@@ -86,24 +90,30 @@ impl WasmArtifactPipeline {
             "materializer": inspection.materializer,
         });
 
-        Ok(serde_json::to_string(&result).map_err(|e| format!("Failed to serialize inspection: {}", e))?)
+        Ok(serde_json::to_string(&result)
+            .map_err(|e| format!("Failed to serialize inspection: {}", e))?)
     }
 
     #[wasm_bindgen]
     pub fn required_capabilities(&self) -> String {
         let caps = self.pipeline.required_capabilities();
-        let result = caps.iter().map(|c| {
-            json!({
-                "name": c.name,
-                "version": c.version,
+        let result = caps
+            .iter()
+            .map(|c| {
+                json!({
+                    "name": c.name,
+                    "version": c.version,
+                })
             })
-        }).collect::<Vec<_>>();
+            .collect::<Vec<_>>();
         serde_json::to_string(&result).unwrap_or_default()
     }
 
     #[wasm_bindgen]
     pub fn build_from_directory(&self, root: &str) -> Result<String, String> {
-        let built = self.pipeline.build_from_directory(root)
+        let built = self
+            .pipeline
+            .build_from_directory(root)
             .map_err(|e| format!("Build failed: {}", e))?;
 
         let artifact = built.artifact();
@@ -118,13 +128,16 @@ impl WasmArtifactPipeline {
             }).collect::<Vec<_>>(),
         });
 
-        Ok(serde_json::to_string(&result).map_err(|e| format!("Failed to serialize artifact: {}", e))?)
+        Ok(serde_json::to_string(&result)
+            .map_err(|e| format!("Failed to serialize artifact: {}", e))?)
     }
 
     #[wasm_bindgen]
     pub fn build_with_authorization(&self, root: &str) -> Result<String, String> {
         let policy = AllowAllPolicy;
-        let (built, evidence) = self.pipeline.build_with_authorization(root, &policy)
+        let (built, evidence) = self
+            .pipeline
+            .build_with_authorization(root, &policy)
             .map_err(|e| format!("Build with authorization failed: {}", e))?;
 
         let artifact = built.artifact();
@@ -168,7 +181,8 @@ impl WasmArtifactPipeline {
             },
         });
 
-        Ok(serde_json::to_string(&result).map_err(|e| format!("Failed to serialize result: {}", e))?)
+        Ok(serde_json::to_string(&result)
+            .map_err(|e| format!("Failed to serialize result: {}", e))?)
     }
 
     #[wasm_bindgen]

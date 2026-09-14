@@ -1,5 +1,5 @@
 use artifact::{
-    core::sha256_prefixed, normalize_relative_path, Artifact, ArtifactError, ContentResolver,
+    Artifact, ArtifactError, ContentResolver, core::sha256_prefixed, normalize_relative_path,
 };
 use std::fs::{self, File};
 use std::io::{self, Read, Write};

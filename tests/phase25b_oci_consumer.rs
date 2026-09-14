@@ -1,6 +1,6 @@
 use artifact::{
-    core::sha256_prefixed, EntryContentResolver, LocalArtifactStore, RecipeSpec, RecoveredArtifact,
-    ZipMaterializer,
+    EntryContentResolver, LocalArtifactStore, RecipeSpec, RecoveredArtifact, ZipMaterializer,
+    core::sha256_prefixed,
 };
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -143,10 +143,12 @@ fn oci_materializes_real_artifact() {
         prepared.oci_materialization.artifact_identity,
         prepared.artifact_identity
     );
-    assert!(prepared
-        .oci_materialization
-        .oci_representation_digest
-        .starts_with("sha256:"));
+    assert!(
+        prepared
+            .oci_materialization
+            .oci_representation_digest
+            .starts_with("sha256:")
+    );
     assert_ne!(
         prepared.oci_materialization.oci_representation_digest,
         prepared.artifact_identity
@@ -185,10 +187,12 @@ fn oci_runtime_executes_artifact() {
 
     assert_eq!(execution.artifact_identity, prepared.artifact_identity);
     assert_eq!(execution.exit_code, Some(0));
-    assert!(execution
-        .stdout
-        .lines()
-        .any(|line| line.trim() == "hello-runtime"));
+    assert!(
+        execution
+            .stdout
+            .lines()
+            .any(|line| line.trim() == "hello-runtime")
+    );
 }
 
 #[test]
@@ -241,9 +245,11 @@ fn oci_runtime_failure_does_not_corrupt_artifact() {
     let failure_execution = execute_oci(&prepared, "fail", "ignored");
     assert_eq!(failure_execution.exit_code, Some(42));
     assert_eq!(failure_execution.artifact_identity, identity_before_failure);
-    assert!(failure_execution
-        .stderr
-        .contains("runtime failure requested"));
+    assert!(
+        failure_execution
+            .stderr
+            .contains("runtime failure requested")
+    );
 
     let recovered = recover(&prepared);
     assert_eq!(recovered.artifact().identity, identity_before_failure);

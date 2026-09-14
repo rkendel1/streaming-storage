@@ -71,9 +71,21 @@ impl RecipeSpec {
         }
     }
 
-    pub fn with_exclusions(mut self, exclude_exact: Vec<String>, exclude_prefixes: Vec<String>) -> Self {
-        self.config.exclude_exact = if exclude_exact.is_empty() { None } else { Some(exclude_exact) };
-        self.config.exclude_prefixes = if exclude_prefixes.is_empty() { None } else { Some(exclude_prefixes) };
+    pub fn with_exclusions(
+        mut self,
+        exclude_exact: Vec<String>,
+        exclude_prefixes: Vec<String>,
+    ) -> Self {
+        self.config.exclude_exact = if exclude_exact.is_empty() {
+            None
+        } else {
+            Some(exclude_exact)
+        };
+        self.config.exclude_prefixes = if exclude_prefixes.is_empty() {
+            None
+        } else {
+            Some(exclude_prefixes)
+        };
         self
     }
 

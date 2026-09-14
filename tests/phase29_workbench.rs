@@ -88,9 +88,11 @@ fn workbench_exercises_zip_to_local_runtime_receipt() {
         .expect("receipt should include execution");
     assert_eq!(first_execution.status, "Completed");
     assert_eq!(first_execution.exit_code, Some(0));
-    assert!(first_execution
-        .stdout
-        .contains("Hello from Artifact Engine"));
+    assert!(
+        first_execution
+            .stdout
+            .contains("Hello from Artifact Engine")
+    );
 
     let second_receipt = workbench
         .execute("bin/app")
@@ -114,7 +116,12 @@ fn source_import_distinguishes_local_and_unsupported_remote_inputs() {
         .expect("local files should be staged as source input");
     assert_eq!(imported_file.source_kind, "Local");
     assert_eq!(imported_file.display_name, "README.md");
-    assert!(imported_file.entries.iter().any(|entry| entry == "README.md"));
+    assert!(
+        imported_file
+            .entries
+            .iter()
+            .any(|entry| entry == "README.md")
+    );
     assert!(imported_file.total_size_bytes > 0);
 
     let artifact = workbench
@@ -201,11 +208,13 @@ fn unsupported_boundaries_are_visible_but_not_selectable() {
     assert!(workbench.select_output("directory").is_err());
     assert!(workbench.select_output("wasm").is_err());
     assert!(workbench.select_target("remote-host").is_err());
-    assert!(workbench
-        .build_artifact(BuildOptions {
-            semantic_declaration: Some("application".to_string())
-        })
-        .is_err());
+    assert!(
+        workbench
+            .build_artifact(BuildOptions {
+                semantic_declaration: Some("application".to_string())
+            })
+            .is_err()
+    );
 }
 
 #[test]

@@ -1,5 +1,5 @@
 use artifact::{
-    core::sha256_prefixed, EntryContentResolver, LocalArtifactStore, RecipeSpec, RecoveredArtifact,
+    EntryContentResolver, LocalArtifactStore, RecipeSpec, RecoveredArtifact, core::sha256_prefixed,
 };
 use runtime_contract::{
     ExternalRuntimeExecutor, OciRepresentation, OciRuntimeContract, RuntimeExecutionInput,
@@ -7,12 +7,12 @@ use runtime_contract::{
 };
 use std::fs;
 use std::io::{self, Read};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tempfile::TempDir;
 use transfer_boundary::{
-    export_oci_representation, import_oci_representation, inspect_image_identity, remove_image,
-    transfer_representation, ExportedRepresentation, ImportedRepresentation,
+    ExportedRepresentation, ImportedRepresentation, export_oci_representation,
+    import_oci_representation, inspect_image_identity, remove_image, transfer_representation,
 };
 
 #[path = "../examples/oci-consumer/src/lib.rs"]
@@ -285,10 +285,12 @@ fn source_context_can_be_removed_after_transfer() {
 
     let execution = execute_transferred(&round_trip, "independent");
     assert_eq!(execution.exit_code, Some(0));
-    assert!(execution
-        .stdout
-        .lines()
-        .any(|line| line.trim() == "independent-runtime"));
+    assert!(
+        execution
+            .stdout
+            .lines()
+            .any(|line| line.trim() == "independent-runtime")
+    );
 }
 
 #[test]
@@ -328,9 +330,11 @@ fn corrupted_transfer_fails_integrity_check() {
     .expect_err("corrupted transfer should fail integrity validation");
 
     assert_eq!(import_error.kind(), io::ErrorKind::InvalidData);
-    assert!(import_error
-        .to_string()
-        .contains("transfer digest mismatch"));
+    assert!(
+        import_error
+            .to_string()
+            .contains("transfer digest mismatch")
+    );
 }
 
 #[test]
@@ -392,10 +396,12 @@ fn transferred_representation_executes() {
     let execution = execute_transferred(&round_trip, "phase28");
 
     assert_eq!(execution.exit_code, Some(0));
-    assert!(execution
-        .stdout
-        .lines()
-        .any(|line| line.trim() == "phase28-runtime"));
+    assert!(
+        execution
+            .stdout
+            .lines()
+            .any(|line| line.trim() == "phase28-runtime")
+    );
     assert!(execution.stderr.contains("phase28 stderr"));
     assert!(!execution.runtime_execution_identifier.is_empty());
 }
