@@ -1,8 +1,9 @@
 pub mod server;
 
 use artifact::{
-    default_directory_zip_pipeline, Artifact, ArtifactError, ContentResolver, LocalArtifactStore,
-    MaterializationResult, PipelineSpec, SourceBackedArtifact, TarMaterializer, ZipMaterializer,
+    Artifact, ArtifactError, ContentResolver, LocalArtifactStore, MaterializationResult,
+    PipelineSpec, SourceBackedArtifact, TarMaterializer, ZipMaterializer,
+    default_directory_zip_pipeline,
 };
 use artifact_runtime_consumer::{RuntimeConsumer, RuntimeExecution};
 use serde::{Deserialize, Serialize};
