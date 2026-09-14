@@ -146,7 +146,7 @@ test('captures expanded output materialization receipts', async ({ page }) => {
   await screenshot(page, '30-cross-output-receipt.png');
   expect(representations.size).toBe(7);
 
-  await page.getByRole('button', { name: 'Start New Artifact' }).click();
+  await resetArtifact(page);
   await importAndBuild(page, rawFilePath);
   await expect(page.locator('input[name="output"][value="raw-file"]')).toBeEnabled();
   await materializeOutput(page, {
@@ -157,7 +157,7 @@ test('captures expanded output materialization receipts', async ({ page }) => {
   });
   await screenshot(page, '30-raw-file.png');
 
-  await page.getByRole('button', { name: 'Start New Artifact' }).click();
+  await resetArtifact(page);
   await importAndBuild(page, componentFilePath);
   await expect(page.locator('input[name="output"][value="wasm-component"]')).toBeEnabled();
   await materializeOutput(page, {
@@ -171,12 +171,19 @@ test('captures expanded output materialization receipts', async ({ page }) => {
 
 async function importAndBuild(page: Page, sourcePath: string) {
   await page.locator('#source-path').fill(sourcePath);
-  await page.getByRole('button', { name: 'Import Local' }).click();
+  await expect(page.locator('#source-path')).toHaveValue(sourcePath);
+  await page.locator('button[data-import="source-path"]').click();
   await expect(page.locator('#source-summary')).toContainText(path.basename(sourcePath), {
     timeout: 60_000,
   });
   await page.getByRole('button', { name: 'Build Artifact' }).click();
   await expect(page.locator('#artifact-created')).toContainText('sha256:', { timeout: 60_000 });
+}
+
+async function resetArtifact(page: Page) {
+  await page.request.post(`${baseUrl}/api/reset`, { data: {} });
+  await page.goto(baseUrl);
+  await expect(page.getByRole('heading', { name: 'Import Source' })).toBeVisible();
 }
 
 async function materializeOutput(
