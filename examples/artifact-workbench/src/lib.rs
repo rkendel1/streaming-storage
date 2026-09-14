@@ -118,10 +118,11 @@ impl OutputSelection {
         match value {
             "zip" => Ok(Self::Zip),
             "tar" => Ok(Self::Tar),
-            "oci" => Ok(Self::OciImage),
-            "directory" | "wasm" | "oci-layout" | "other" => Err(WorkbenchError::InvalidSelection(
-                format!("{value} is visible as a future boundary but is not selectable"),
-            )),
+            "oci" | "directory" | "wasm" | "oci-layout" | "other" => Err(
+                WorkbenchError::InvalidSelection(format!(
+                    "{value} is visible as an unintegrated boundary but is not selectable"
+                )),
+            ),
             _ => Err(WorkbenchError::InvalidSelection(format!(
                 "unknown output selection: {value}"
             ))),
@@ -149,9 +150,8 @@ impl TargetSelection {
         match value {
             "download" => Ok(Self::DownloadLocal),
             "local-runtime" => Ok(Self::LocalRuntime),
-            "docker" => Ok(Self::Docker),
-            "remote-host" | "other" => Err(WorkbenchError::InvalidSelection(format!(
-                "{value} is visible as a future boundary but is not selectable"
+            "docker" | "remote-host" | "other" => Err(WorkbenchError::InvalidSelection(format!(
+                "{value} is visible as an unintegrated boundary but is not selectable"
             ))),
             _ => Err(WorkbenchError::InvalidSelection(format!(
                 "unknown target selection: {value}"
