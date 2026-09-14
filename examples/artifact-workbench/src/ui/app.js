@@ -100,11 +100,11 @@ function renderOptions(selector, name, options) {
     input.type = 'radio';
     input.name = name;
     input.value = option.id;
-    input.disabled = option.state === 'unavailable';
+    input.disabled = option.state !== 'available';
     const text = document.createElement('span');
     text.textContent = option.label;
     const detail = document.createElement('small');
-    detail.textContent = option.detail;
+    detail.textContent = option.state === 'available' ? option.detail : `${option.detail} — not selectable`;
     label.append(input, text, detail);
     fieldset.append(label);
   }

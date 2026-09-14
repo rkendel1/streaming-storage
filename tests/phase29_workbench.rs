@@ -207,6 +207,8 @@ fn unsupported_boundaries_are_visible_but_not_selectable() {
 
     assert!(workbench.select_output("directory").is_err());
     assert!(workbench.select_output("wasm").is_err());
+    assert!(workbench.select_output("oci").is_err());
+    assert!(workbench.select_target("docker").is_err());
     assert!(workbench.select_target("remote-host").is_err());
     assert!(
         workbench
@@ -278,6 +280,7 @@ fn browser_ui_does_not_calculate_identity_or_keep_registry() {
     assert!(!app.contains("createHash"));
     assert!(!app.contains("artifactRegistry"));
     assert!(!app.contains("artifactCache"));
+    assert!(app.contains("option.state !== 'available'"));
     assert!(index.contains("https://github.com/org/repo"));
     assert!(index.contains("https://example.com/artifact.zip"));
     assert!(index.contains("Choose files"));

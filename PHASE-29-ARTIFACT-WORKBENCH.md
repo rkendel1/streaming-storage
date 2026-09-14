@@ -46,6 +46,35 @@ Then open `http://127.0.0.1:8787` and:
 5. Run an executable inside the artifact, such as `bin/app`.
 6. Read the receipt showing artifact identity, representation identity, target, execution identity, exit code, stdout, and stderr.
 
+## Browser evidence
+
+The browser acceptance path is captured by Playwright:
+
+```sh
+npm install
+npx playwright install chromium
+npm run test:phase29-browser
+```
+
+The test starts the real Workbench server, imports the public GitHub repository URL, imports a direct downloadable ZIP URL, previews local browser-selected files, imports a local host path, builds an artifact through the engine, selects an implemented ZIP output, selects the local runtime target, executes successfully, executes a real failing program, and re-runs the same artifact.
+
+The resulting screenshots are stored in `artifacts/phase29/`:
+
+- `01-empty-workbench.png`
+- `02-github-source.png`
+- `03-github-imported.png`
+- `04-direct-url.png`
+- `05-local-source.png`
+- `06-source-preview.png`
+- `07-artifact-configuration.png`
+- `08-artifact-created.png`
+- `09-output-selection.png`
+- `10-target-selection.png`
+- `11-execution.png`
+- `12-result.png`
+- `13-failure.png`
+- `14-rerun.png`
+
 ## Negative coverage
 
 `tests/phase29_workbench.rs` proves:
