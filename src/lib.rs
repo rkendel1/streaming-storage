@@ -22,7 +22,11 @@ pub use crate::core::{
     MaterializationResult, Provenance, TransformationRecord, normalize_relative_path,
     validate_entry_layout,
 };
-pub use crate::materializers::{TarMaterializer, ZipMaterialization, ZipMaterializer};
+pub use crate::materializers::{
+    AppBundleMaterializer, DirectoryMaterializer, GitTreeMaterializer, RawFileMaterializer,
+    TarCompression, TarMaterializer, WasmMaterializer, WasmRepresentationKind,
+    ZipMaterialization, ZipMaterializer,
+};
 pub use crate::pipeline::{
     CompileStageSpec, ContentResolver, EntryContentResolver, GenerateStageSpec, InspectedStage,
     MaterializerSpec, MemoryContentResolver, PipelineInspection, PipelineSpec, RedactStageSpec,
