@@ -1,4 +1,5 @@
 const state = {
+  capabilities: null,
   source: null,
   pipeline: 'default',
   artifact: null,
@@ -85,28 +86,89 @@ function renderTree(source) {
 }
 
 function renderCapabilities(capabilities) {
+  state.capabilities = capabilities;
   pipelineCapabilities.textContent = capabilities.pipelines[0].detail;
-  renderOptions('#output-options', 'output', capabilities.outputs);
-  renderOptions('#target-options', 'target', capabilities.targets);
+  renderOutputOptions(capabilities.outputs);
+  renderTargetOptions(capabilities.targets);
+}
+
+function renderOutputOptions(options) {
+  const fieldset = document.querySelector('#output-options');
+  fieldset.innerHTML = '';
+  const categories = new Map();
+  for (const option of options) {
+    if (!categories.has(option.category)) categories.set(option.category, []);
+    categories.get(option.category).push(option);
+  }
+  for (const [category, categoryOptions] of categories) {
+    const group = document.createElement('section');
+    group.className = 'option-group';
+    const heading = document.createElement('h3');
+    heading.textContent = category;
+    group.append(heading);
+    for (const option of categoryOptions) {
+      group.append(renderOption('output', option));
+    }
+    fieldset.append(group);
+  }
+}
+
+function renderTargetOptions(options) {
+  const fieldset = document.querySelector('#target-options');
+  fieldset.innerHTML = '';
+  for (const option of options) {
+    fieldset.append(renderOption('target', option));
+  }
+}
+
+function renderOption(name, option) {
+  const baseId = `${name}-${option.id}`;
+  const label = document.createElement('label');
+  label.className = 'option';
+  const input = document.createElement('input');
+  input.id = baseId;
+  input.type = 'radio';
+  input.name = name;
+  input.value = option.id;
+  input.disabled = option.state !== 'available';
+  const text = document.createElement('span');
+  text.textContent = option.label;
+  const badge = document.createElement('strong');
+  badge.className = `state-badge ${option.state}`;
+  badge.textContent = stateLabel(option.state);
+  const description = document.createElement('small');
+  description.id = `${baseId}-description`;
+  description.textContent = option.description;
+  const detail = document.createElement('small');
+  detail.id = `${baseId}-detail`;
+  detail.textContent = option.detail;
+  input.setAttribute('aria-describedby', `${description.id} ${detail.id}`);
+  label.append(input, text, badge, description, detail);
+  return label;
+}
+
+function stateLabel(value) {
+  if (value === 'available') return 'Available';
+  if (value === 'external_consumer') return 'External';
+  return 'Unavailable';
+}
+
+function availableTargetOptions(targetReady) {
+  return (state.capabilities?.targets || []).map((option) => {
+    if (targetReady.includes(option.id)) return option;
+    return {
+      ...option,
+      state: option.state === 'available' ? 'unavailable' : option.state,
+      detail: option.state === 'available' ? `Unavailable for ${state.output?.output || 'this representation'}` : option.detail,
+    };
+  });
 }
 
 function renderOptions(selector, name, options) {
   const fieldset = document.querySelector(selector);
   fieldset.innerHTML = '';
   for (const option of options) {
-    const label = document.createElement('label');
-    label.className = 'option';
-    const input = document.createElement('input');
-    input.type = 'radio';
-    input.name = name;
-    input.value = option.id;
-    input.disabled = option.state !== 'available';
-    const text = document.createElement('span');
-    text.textContent = option.label;
-    const detail = document.createElement('small');
-    detail.textContent = option.state === 'available' ? option.detail : `${option.detail} — not selectable`;
-    label.append(input, text, detail);
-    fieldset.append(label);
+    fieldset.append(renderOption(name, option));
   }
 }
 
@@ -119,21 +181,27 @@ function renderArtifact(artifact) {
     ['Pipeline', artifact.pipeline_identity],
     ['Lineage', artifact.lineage],
   ]);
+  renderOutputOptions(artifact.output_options);
   document.querySelector('#flow-artifact').textContent = compactIdentity(artifact.identity);
   enablePanel('#output-panel', true);
 }
 
 function renderRepresentation(representation) {
-  representationCreated.hidden = false;
-  representationCreated.innerHTML = receiptGrid([
+  const rows = [
     ['Artifact', representation.artifact_identity],
     ['Output', representation.output],
-    ['Representation', representation.representation_identity],
+    [representation.representation_identity_label, representation.representation_identity],
     ['Size', bytes(representation.size_bytes)],
     ['Path', representation.path || 'External consumer'],
-  ]);
+  ];
+  for (const detail of representation.details || []) {
+    rows.push([detail.label, detail.value]);
+  }
+  representationCreated.hidden = false;
+  representationCreated.innerHTML = receiptGrid(rows);
   document.querySelector('#flow-output').textContent = representation.output;
   downloadButton.disabled = !representation.path;
+  renderTargetOptions(availableTargetOptions(representation.target_ready));
   enablePanel('#target-panel', true);
 }
 
@@ -145,16 +213,20 @@ function renderReceipt(data) {
     stdout: '',
     stderr: '',
   };
-  receipt.innerHTML = `${receiptGrid([
+  const rows = [
     ['Artifact', data.artifact.identity],
     ['Output', data.representation.output],
-    ['Representation', data.representation.representation_identity],
+    [data.representation.representation_identity_label, data.representation.representation_identity],
     ['Target', data.target],
     ['Execution', execution.identity],
     ['Status', execution.status],
     ['Exit Code', execution.exit_code === null ? '—' : execution.exit_code],
     ['Verdict', data.verdict],
-  ])}<h3>OUTPUT</h3><pre>${escapeHtml(execution.stdout || '(no stdout)')}</pre><h3>STDERR</h3><pre>${escapeHtml(execution.stderr || '(no stderr)')}</pre>`;
+  ];
+  for (const detail of data.representation.details || []) {
+    rows.push([detail.label, detail.value]);
+  }
+  receipt.innerHTML = `${receiptGrid(rows)}<h3>OUTPUT</h3><pre>${escapeHtml(execution.stdout || '(no stdout)')}</pre><h3>STDERR</h3><pre>${escapeHtml(execution.stderr || '(no stderr)')}</pre>`;
   enablePanel('#receipt-panel', true);
   runAgainButton.disabled = false;
 }
@@ -225,6 +297,7 @@ document.querySelector('#target-options').addEventListener('change', async () =>
     const summary = await api('/api/target', { target });
     document.querySelector('#flow-target').textContent = summary.target || '—';
     state.target = summary.target;
+    runButton.textContent = summary.target === 'Download / Local' ? 'Materialize' : 'Run';
   } catch (error) {
     setStatus(error.message);
   }

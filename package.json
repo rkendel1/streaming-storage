@@ -4,7 +4,8 @@
   "private": true,
   "description": "Artifact Engine is a logical artifact substrate with deterministic identity, transformation lineage, and physical materialization that is independent of archive format.",
   "scripts": {
-    "test:phase29-browser": "playwright test tests/phase29_workbench.spec.ts"
+    "test:phase29-browser": "playwright test tests/phase29_workbench.spec.ts",
+    "test:phase30-browser": "playwright test tests/phase30_workbench.spec.ts"
   },
   "repository": {
     "type": "git",

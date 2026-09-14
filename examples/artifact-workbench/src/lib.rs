@@ -1,8 +1,10 @@
 pub mod server;
 
 use artifact::{
-    Artifact, ArtifactError, ContentResolver, LocalArtifactStore, MaterializationResult,
-    PipelineSpec, SourceBackedArtifact, TarMaterializer, ZipMaterializer,
+    AppBundleMaterializer, Artifact, ArtifactError, ContentResolver, DirectoryMaterializer,
+    GitTreeMaterializer, LocalArtifactStore, MaterializationResult, PipelineSpec,
+    RawFileMaterializer, SourceBackedArtifact, TarCompression, TarMaterializer,
+    WasmMaterializer, WasmRepresentationKind, ZipMaterializer,
     default_directory_zip_pipeline,
 };
 use artifact_runtime_consumer::{RuntimeConsumer, RuntimeExecution};
@@ -64,7 +66,9 @@ pub enum CapabilityState {
 pub struct WorkbenchCapability {
     pub id: String,
     pub label: String,
+    pub category: String,
     pub state: CapabilityState,
+    pub description: String,
     pub detail: String,
 }
 
@@ -104,13 +108,24 @@ pub struct ArtifactView {
     pub capabilities: Vec<String>,
     pub lineage: String,
     pub semantic_declaration: Option<String>,
+    pub output_options: Vec<WorkbenchCapability>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OutputSelection {
     Zip,
     Tar,
+    TarGzip,
+    TarZstd,
+    Directory,
+    RawFile,
+    GitTree,
+    AppBundle,
+    WasmModule,
+    WasmComponent,
     OciImage,
+    OciLayout,
+    Iso,
 }
 
 impl OutputSelection {
@@ -118,14 +133,38 @@ impl OutputSelection {
         match value {
             "zip" => Ok(Self::Zip),
             "tar" => Ok(Self::Tar),
-            "oci" | "directory" | "wasm" | "oci-layout" | "other" => Err(
-                WorkbenchError::InvalidSelection(format!(
-                    "{value} is visible as an unintegrated boundary but is not selectable"
-                )),
-            ),
+            "tar-gzip" => Ok(Self::TarGzip),
+            "tar-zstd" => Ok(Self::TarZstd),
+            "directory" => Ok(Self::Directory),
+            "raw-file" => Ok(Self::RawFile),
+            "git-tree" => Ok(Self::GitTree),
+            "app-bundle" => Ok(Self::AppBundle),
+            "wasm-module" => Ok(Self::WasmModule),
+            "wasm-component" => Ok(Self::WasmComponent),
+            "oci" => Ok(Self::OciImage),
+            "oci-layout" => Ok(Self::OciLayout),
+            "iso" => Ok(Self::Iso),
             _ => Err(WorkbenchError::InvalidSelection(format!(
                 "unknown output selection: {value}"
             ))),
+        }
+    }
+
+    fn id(self) -> &'static str {
+        match self {
+            Self::Zip => "zip",
+            Self::Tar => "tar",
+            Self::TarGzip => "tar-gzip",
+            Self::TarZstd => "tar-zstd",
+            Self::Directory => "directory",
+            Self::RawFile => "raw-file",
+            Self::GitTree => "git-tree",
+            Self::AppBundle => "app-bundle",
+            Self::WasmModule => "wasm-module",
+            Self::WasmComponent => "wasm-component",
+            Self::OciImage => "oci",
+            Self::OciLayout => "oci-layout",
+            Self::Iso => "iso",
         }
     }
 
@@ -133,7 +172,53 @@ impl OutputSelection {
         match self {
             Self::Zip => "ZIP",
             Self::Tar => "TAR",
+            Self::TarGzip => "TAR + gzip",
+            Self::TarZstd => "TAR + zstd",
+            Self::Directory => "Directory",
+            Self::RawFile => "Raw File",
+            Self::GitTree => "Git Tree",
+            Self::AppBundle => "App Bundle",
+            Self::WasmModule => "WASM Module",
+            Self::WasmComponent => "WASM Component",
             Self::OciImage => "OCI Image",
+            Self::OciLayout => "OCI Layout",
+            Self::Iso => "ISO",
+        }
+    }
+
+    fn category(self) -> &'static str {
+        match self {
+            Self::Zip
+            | Self::Tar
+            | Self::TarGzip
+            | Self::TarZstd
+            | Self::Directory
+            | Self::RawFile => "Portable",
+            Self::OciImage
+            | Self::OciLayout
+            | Self::WasmModule
+            | Self::WasmComponent => "Runtime",
+            Self::GitTree => "Development",
+            Self::AppBundle => "Application",
+            Self::Iso => "Distribution",
+        }
+    }
+
+    fn description(self) -> &'static str {
+        match self {
+            Self::Zip => "Portable ZIP archive",
+            Self::Tar => "Portable TAR archive",
+            Self::TarGzip => "TAR archive compressed with gzip",
+            Self::TarZstd => "TAR archive compressed with zstd",
+            Self::Directory => "Materialize as a filesystem directory",
+            Self::RawFile => "Single-file materialization",
+            Self::GitTree => "Materialize as a Git-compatible working tree",
+            Self::AppBundle => "Self-contained application bundle",
+            Self::WasmModule => "WebAssembly core module representation",
+            Self::WasmComponent => "WebAssembly Component Model representation",
+            Self::OciImage => "Container image representation",
+            Self::OciLayout => "OCI image layout directory",
+            Self::Iso => "Portable ISO filesystem image",
         }
     }
 }
@@ -171,11 +256,20 @@ impl TargetSelection {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RepresentationView {
     pub artifact_identity: String,
+    pub output_id: String,
     pub output: String,
+    pub representation_identity_label: String,
     pub representation_identity: String,
     pub size_bytes: u64,
     pub path: Option<String>,
     pub target_ready: Vec<String>,
+    pub details: Vec<RepresentationDetail>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RepresentationDetail {
+    pub label: String,
+    pub value: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -252,77 +346,52 @@ impl ArtifactWorkbench {
             pipelines: vec![WorkbenchCapability {
                 id: "default".to_string(),
                 label: "Default".to_string(),
+                category: "Pipeline".to_string(),
                 state: CapabilityState::Available,
+                description: "Directory source → select → manifest → validate".to_string(),
                 detail: "Directory source → select → manifest → validate".to_string(),
             }],
-            outputs: vec![
-                WorkbenchCapability {
-                    id: "zip".to_string(),
-                    label: "ZIP".to_string(),
-                    state: CapabilityState::Available,
-                    detail: "Engine ZipMaterializer".to_string(),
-                },
-                WorkbenchCapability {
-                    id: "tar".to_string(),
-                    label: "TAR".to_string(),
-                    state: CapabilityState::Available,
-                    detail: "Engine TarMaterializer".to_string(),
-                },
-                WorkbenchCapability {
-                    id: "oci".to_string(),
-                    label: "OCI Image".to_string(),
-                    state: CapabilityState::ExternalConsumer,
-                    detail: "Available through external OCI consumer when Docker is present"
-                        .to_string(),
-                },
-                WorkbenchCapability {
-                    id: "directory".to_string(),
-                    label: "Directory".to_string(),
-                    state: CapabilityState::Unavailable,
-                    detail: "Coming from future materializer".to_string(),
-                },
-                WorkbenchCapability {
-                    id: "wasm".to_string(),
-                    label: "WASM".to_string(),
-                    state: CapabilityState::Unavailable,
-                    detail: "Coming from future materializer".to_string(),
-                },
-                WorkbenchCapability {
-                    id: "oci-layout".to_string(),
-                    label: "OCI layout".to_string(),
-                    state: CapabilityState::Unavailable,
-                    detail: "Coming from future materializer".to_string(),
-                },
-            ],
+            outputs: catalog_output_options(None),
             targets: vec![
                 WorkbenchCapability {
                     id: "download".to_string(),
                     label: "Download / Local".to_string(),
+                    category: "Target".to_string(),
                     state: CapabilityState::Available,
+                    description: "Materialized output on the workbench host".to_string(),
                     detail: "Materialized file on the workbench host".to_string(),
                 },
                 WorkbenchCapability {
                     id: "local-runtime".to_string(),
                     label: "Local Runtime".to_string(),
+                    category: "Target".to_string(),
                     state: CapabilityState::Available,
+                    description: "Execute ZIP representations with the runtime consumer"
+                        .to_string(),
                     detail: "Existing runtime consumer for ZIP representations".to_string(),
                 },
                 WorkbenchCapability {
                     id: "docker".to_string(),
                     label: "Docker".to_string(),
+                    category: "Target".to_string(),
                     state: CapabilityState::ExternalConsumer,
+                    description: "External OCI consumer boundary".to_string(),
                     detail: "External OCI consumer boundary".to_string(),
                 },
                 WorkbenchCapability {
                     id: "remote-host".to_string(),
                     label: "Remote Host".to_string(),
+                    category: "Target".to_string(),
                     state: CapabilityState::Unavailable,
+                    description: "External deployment boundary".to_string(),
                     detail: "Unavailable until deployment boundary is proven".to_string(),
                 },
                 WorkbenchCapability {
                     id: "other".to_string(),
                     label: "Other".to_string(),
+                    category: "Target".to_string(),
                     state: CapabilityState::Unavailable,
+                    description: "Future consumer boundary".to_string(),
                     detail: "Unavailable until a real target boundary exists".to_string(),
                 },
             ],
@@ -370,7 +439,7 @@ impl ArtifactWorkbench {
         let source_artifact = self.pipeline.build_from_directory(&source)?;
         self.store
             .persist(source_artifact.artifact(), &source_artifact)?;
-        let view = artifact_view(source_artifact.artifact(), &self.pipeline)?;
+        let view = artifact_view(source_artifact.artifact(), &source_artifact, &self.pipeline)?;
         self.source_artifact = Some(source_artifact);
         self.recovered_artifact = None;
         self.representation = None;
@@ -381,7 +450,7 @@ impl ArtifactWorkbench {
 
     pub fn recover_artifact(&mut self, identity: &str) -> Result<ArtifactView, WorkbenchError> {
         let recovered = self.store.recover(identity)?;
-        let view = artifact_view(recovered.artifact(), &self.pipeline)?;
+        let view = artifact_view(recovered.artifact(), &recovered, &self.pipeline)?;
         self.recovered_artifact = Some(recovered);
         self.source_artifact = None;
         self.representation = None;
@@ -392,6 +461,10 @@ impl ArtifactWorkbench {
 
     pub fn select_output(&mut self, value: &str) -> Result<RepresentationView, WorkbenchError> {
         let selection = OutputSelection::parse(value)?;
+        let capability = self.output_capability(selection)?;
+        if capability.state != CapabilityState::Available {
+            return Err(WorkbenchError::InvalidSelection(capability.detail));
+        }
         let output_file = self.materialize(selection)?;
         self.selected_output = Some(selection);
         self.materialized_path = output_file.path.clone().map(PathBuf::from);
@@ -402,6 +475,17 @@ impl ArtifactWorkbench {
 
     pub fn select_target(&mut self, value: &str) -> Result<OperationSummary, WorkbenchError> {
         let target = TargetSelection::parse(value)?;
+        let representation = self
+            .representation
+            .as_ref()
+            .ok_or(WorkbenchError::MissingState("representation"))?;
+        if !representation.target_ready.iter().any(|ready| ready == value) {
+            return Err(WorkbenchError::InvalidSelection(format!(
+                "{} is unavailable for {}",
+                target.label(),
+                representation.output
+            )));
+        }
         self.selected_target = Some(target);
         Ok(self.summary())
     }
@@ -451,7 +535,7 @@ impl ArtifactWorkbench {
         };
 
         let receipt = ReceiptView {
-            artifact: artifact_view(artifact, &self.pipeline)?,
+            artifact: self.current_artifact_view()?,
             representation,
             target: target.label().to_string(),
             execution,
@@ -521,6 +605,26 @@ impl ArtifactWorkbench {
         Err(WorkbenchError::MissingState("artifact"))
     }
 
+    fn current_artifact_view(&self) -> Result<ArtifactView, WorkbenchError> {
+        if let Some(source_artifact) = &self.source_artifact {
+            return artifact_view(source_artifact.artifact(), source_artifact, &self.pipeline);
+        }
+        if let Some(recovered) = &self.recovered_artifact {
+            return artifact_view(recovered.artifact(), recovered, &self.pipeline);
+        }
+        Err(WorkbenchError::MissingState("artifact"))
+    }
+
+    fn output_capability(&self, selection: OutputSelection) -> Result<WorkbenchCapability, WorkbenchError> {
+        if let Some(source_artifact) = &self.source_artifact {
+            return output_capability(selection, source_artifact.artifact(), source_artifact);
+        }
+        if let Some(recovered) = &self.recovered_artifact {
+            return output_capability(selection, recovered.artifact(), recovered);
+        }
+        Err(WorkbenchError::MissingState("artifact"))
+    }
+
     fn current_artifact(&self) -> Result<&Artifact, WorkbenchError> {
         if let Some(source_artifact) = &self.source_artifact {
             return Ok(source_artifact.artifact());
@@ -539,24 +643,95 @@ fn materialize_with<R: ContentResolver>(
     output_root: &Path,
 ) -> Result<RepresentationView, WorkbenchError> {
     match selection {
-            OutputSelection::Zip => {
+        OutputSelection::Zip => {
             let path = output_root.join(file_stem(&artifact.identity, "zip"));
-                let result = ZipMaterializer.materialize_to_path(artifact, resolver, &path)?;
-                Ok(representation_view(result, selection, path, vec!["download", "local-runtime"]))
-            }
-            OutputSelection::Tar => {
-            let path = output_root.join(file_stem(&artifact.identity, "tar"));
-                let result = TarMaterializer.materialize_to_path(artifact, resolver, &path)?;
-                Ok(representation_view(result, selection, path, vec!["download"]))
-            }
-            OutputSelection::OciImage => Err(WorkbenchError::InvalidSelection(
-                "OCI image materialization is available through the external OCI consumer; run that boundary where Docker is available".to_string(),
-            )),
+            let result = ZipMaterializer.materialize_to_path(artifact, resolver, &path)?;
+            Ok(representation_view(result, selection, path, vec!["download", "local-runtime"]))
         }
+        OutputSelection::Tar => {
+            let path = output_root.join(file_stem(&artifact.identity, "tar"));
+            let result = TarMaterializer.materialize_to_path(artifact, resolver, &path)?;
+            Ok(representation_view(result, selection, path, vec!["download"]))
+        }
+        OutputSelection::TarGzip => {
+            let path = output_root.join(file_name(&artifact.identity, "tar.gz"));
+            let result = TarMaterializer.materialize_to_path_with_compression(
+                artifact,
+                resolver,
+                &path,
+                TarCompression::Gzip,
+            )?;
+            Ok(representation_view(result, selection, path, vec!["download"]))
+        }
+        OutputSelection::TarZstd => {
+            let path = output_root.join(file_name(&artifact.identity, "tar.zst"));
+            let result = TarMaterializer.materialize_to_path_with_compression(
+                artifact,
+                resolver,
+                &path,
+                TarCompression::Zstd,
+            )?;
+            Ok(representation_view(result, selection, path, vec!["download"]))
+        }
+        OutputSelection::Directory => {
+            let path = output_root.join(directory_name(&artifact.identity, "directory"));
+            let result = DirectoryMaterializer.materialize_to_path(artifact, resolver, &path)?;
+            Ok(representation_view(result, selection, path, vec!["download"]))
+        }
+        OutputSelection::RawFile => {
+            let entry = artifact
+                .entries
+                .first()
+                .ok_or_else(|| WorkbenchError::InvalidSelection("artifact is empty".to_string()))?;
+            let path = output_root.join(raw_output_name(&artifact.identity, &entry.path));
+            let result = RawFileMaterializer.materialize_to_path(artifact, resolver, &path)?;
+            Ok(representation_view(result, selection, path, vec!["download"]))
+        }
+        OutputSelection::GitTree => {
+            let path = output_root.join(directory_name(&artifact.identity, "git-tree"));
+            let result = GitTreeMaterializer.materialize_to_path(artifact, resolver, &path)?;
+            Ok(representation_view(result, selection, path, vec!["download"]))
+        }
+        OutputSelection::AppBundle => {
+            let path = output_root.join(directory_name(&artifact.identity, "app-bundle"));
+            let result = AppBundleMaterializer.materialize_to_path(artifact, resolver, &path)?;
+            Ok(representation_view(result, selection, path, vec!["download"]))
+        }
+        OutputSelection::WasmModule => {
+            let path = output_root.join(file_stem(&artifact.identity, "wasm"));
+            let result = WasmMaterializer.materialize_to_path(
+                artifact,
+                resolver,
+                &path,
+                WasmRepresentationKind::Module,
+            )?;
+            Ok(representation_view(result, selection, path, vec!["download"]))
+        }
+        OutputSelection::WasmComponent => {
+            let path = output_root.join(file_name(&artifact.identity, "component.wasm"));
+            let result = WasmMaterializer.materialize_to_path(
+                artifact,
+                resolver,
+                &path,
+                WasmRepresentationKind::Component,
+            )?;
+            Ok(representation_view(result, selection, path, vec!["download"]))
+        }
+        OutputSelection::OciImage => Err(WorkbenchError::InvalidSelection(
+            "OCI image materialization remains an external consumer concern".to_string(),
+        )),
+        OutputSelection::OciLayout => Err(WorkbenchError::InvalidSelection(
+            "OCI layout is not proven in this workbench yet".to_string(),
+        )),
+        OutputSelection::Iso => Err(WorkbenchError::InvalidSelection(
+            "ISO materialization is unavailable because required tooling is not present".to_string(),
+        )),
+    }
 }
 
-fn artifact_view(
+fn artifact_view<R: ContentResolver>(
     artifact: &Artifact,
+    resolver: &R,
     pipeline: &PipelineSpec,
 ) -> Result<ArtifactView, WorkbenchError> {
     Ok(ArtifactView {
@@ -576,6 +751,7 @@ fn artifact_view(
             format!("{} transformation(s)", artifact.lineage().len())
         },
         semantic_declaration: artifact.semantic_type().map(ToString::to_string),
+        output_options: artifact_output_options(artifact, resolver)?,
     })
 }
 
@@ -585,13 +761,31 @@ fn representation_view(
     path: PathBuf,
     target_ready: Vec<&str>,
 ) -> RepresentationView {
+    let mut details = vec![RepresentationDetail {
+        label: "Format".to_string(),
+        value: result.materializer_format.clone(),
+    }];
+    match output {
+        OutputSelection::TarGzip => details.push(RepresentationDetail {
+            label: "Compression".to_string(),
+            value: "gzip".to_string(),
+        }),
+        OutputSelection::TarZstd => details.push(RepresentationDetail {
+            label: "Compression".to_string(),
+            value: "zstd".to_string(),
+        }),
+        _ => {}
+    }
     RepresentationView {
         artifact_identity: result.artifact_identity,
+        output_id: output.id().to_string(),
         output: output.label().to_string(),
+        representation_identity_label: representation_identity_label(output).to_string(),
         representation_identity: result.output_digest,
         size_bytes: result.size_bytes,
         path: Some(path.display().to_string()),
         target_ready: target_ready.into_iter().map(ToString::to_string).collect(),
+        details,
     }
 }
 
@@ -607,6 +801,209 @@ fn execution_view(execution: RuntimeExecution) -> ExecutionView {
         exit_code: execution.exit_code,
         stdout: execution.stdout,
         stderr: execution.stderr,
+    }
+}
+
+fn catalog_output_options(artifact: Option<(&Artifact, &dyn ContentResolver)>) -> Vec<WorkbenchCapability> {
+    output_selections()
+        .into_iter()
+        .map(|selection| match artifact {
+            Some((artifact, resolver)) => {
+                output_capability(selection, artifact, resolver).unwrap_or_else(|_| {
+                    unavailable_output(selection, "artifact capability evaluation failed")
+                })
+            }
+            None => catalog_output(selection),
+        })
+        .collect()
+}
+
+fn artifact_output_options<R: ContentResolver + ?Sized>(
+    artifact: &Artifact,
+    resolver: &R,
+) -> Result<Vec<WorkbenchCapability>, WorkbenchError> {
+    output_selections()
+        .into_iter()
+        .map(|selection| output_capability(selection, artifact, resolver))
+        .collect()
+}
+
+fn output_capability<R: ContentResolver + ?Sized>(
+    selection: OutputSelection,
+    artifact: &Artifact,
+    resolver: &R,
+) -> Result<WorkbenchCapability, WorkbenchError> {
+    let mut capability = catalog_output(selection);
+    capability.state = CapabilityState::Available;
+    capability.detail.clear();
+
+    match selection {
+        OutputSelection::Zip | OutputSelection::Tar | OutputSelection::Directory | OutputSelection::GitTree => {}
+        OutputSelection::TarGzip => {
+            if !TarCompression::Gzip.is_supported() {
+                capability.state = CapabilityState::Unavailable;
+                capability.detail = "gzip tooling is unavailable in this environment".to_string();
+            }
+        }
+        OutputSelection::TarZstd => {
+            if !TarCompression::Zstd.is_supported() {
+                capability.state = CapabilityState::Unavailable;
+                capability.detail = "zstd tooling is unavailable in this environment".to_string();
+            }
+        }
+        OutputSelection::RawFile => {
+            if artifact.entries.len() != 1 {
+                capability.state = CapabilityState::Unavailable;
+                capability.detail =
+                    "Raw File requires an artifact containing exactly one file".to_string();
+            } else if let Some(entry) = artifact.entries.first() {
+                capability.detail = format!("Direct materialization of {}", entry.path);
+            }
+        }
+        OutputSelection::AppBundle => {
+            if let Some(entrypoint) = app_bundle_entrypoint(artifact) {
+                capability.detail = format!("Entrypoint {entrypoint}");
+            } else {
+                capability.state = CapabilityState::Unavailable;
+                capability.detail =
+                    "Requires an entrypoint such as application.wasm, bin/app, or a single file"
+                        .to_string();
+            }
+        }
+        OutputSelection::WasmModule => match WasmMaterializer.detect_kind(artifact, resolver) {
+            Ok(WasmRepresentationKind::Module) => {
+                capability.detail = "Valid core WebAssembly module".to_string();
+            }
+            Ok(WasmRepresentationKind::Component) => {
+                capability.state = CapabilityState::Unavailable;
+                capability.detail = "Artifact is a WASM component, not a core module".to_string();
+            }
+            Err(error) => {
+                capability.state = CapabilityState::Unavailable;
+                capability.detail = error.to_string();
+            }
+        },
+        OutputSelection::WasmComponent => match WasmMaterializer.detect_kind(artifact, resolver) {
+            Ok(WasmRepresentationKind::Component) => {
+                capability.detail = "Valid WebAssembly Component Model binary".to_string();
+            }
+            Ok(WasmRepresentationKind::Module) => {
+                capability.state = CapabilityState::Unavailable;
+                capability.detail = "Artifact is a WASM module, not a component".to_string();
+            }
+            Err(error) => {
+                capability.state = CapabilityState::Unavailable;
+                capability.detail = error.to_string();
+            }
+        },
+        OutputSelection::OciImage => {
+            capability.state = CapabilityState::ExternalConsumer;
+            capability.detail = "Materialize through the external OCI consumer when Docker is present"
+                .to_string();
+        }
+        OutputSelection::OciLayout => {
+            capability.state = CapabilityState::Unavailable;
+            capability.detail = "OCI layout is not proven in this workbench yet".to_string();
+        }
+        OutputSelection::Iso => {
+            capability.state = CapabilityState::Unavailable;
+            capability.detail = "ISO materialization requires dedicated tooling that is not present"
+                .to_string();
+        }
+    }
+
+    if capability.detail.is_empty() {
+        capability.detail = capability.description.clone();
+    }
+    Ok(capability)
+}
+
+fn catalog_output(selection: OutputSelection) -> WorkbenchCapability {
+    let (state, detail) = match selection {
+        OutputSelection::TarGzip if !TarCompression::Gzip.is_supported() => (
+            CapabilityState::Unavailable,
+            "gzip tooling is unavailable in this environment".to_string(),
+        ),
+        OutputSelection::TarZstd if !TarCompression::Zstd.is_supported() => (
+            CapabilityState::Unavailable,
+            "zstd tooling is unavailable in this environment".to_string(),
+        ),
+        OutputSelection::OciImage => (
+            CapabilityState::ExternalConsumer,
+            "Materialize through the external OCI consumer when Docker is present".to_string(),
+        ),
+        OutputSelection::OciLayout => (
+            CapabilityState::Unavailable,
+            "OCI layout is not proven in this workbench yet".to_string(),
+        ),
+        OutputSelection::Iso => (
+            CapabilityState::Unavailable,
+            "ISO materialization requires dedicated tooling that is not present".to_string(),
+        ),
+        OutputSelection::RawFile => (
+            CapabilityState::Unavailable,
+            "Requires exactly one file".to_string(),
+        ),
+        OutputSelection::WasmModule => (
+            CapabilityState::Unavailable,
+            "Requires a valid core WASM module artifact".to_string(),
+        ),
+        OutputSelection::WasmComponent => (
+            CapabilityState::Unavailable,
+            "Requires a valid WASM component artifact".to_string(),
+        ),
+        OutputSelection::AppBundle => (
+            CapabilityState::Unavailable,
+            "Requires an entrypoint such as application.wasm, bin/app, or a single file".to_string(),
+        ),
+        _ => (CapabilityState::Available, selection.description().to_string()),
+    };
+    WorkbenchCapability {
+        id: selection.id().to_string(),
+        label: selection.label().to_string(),
+        category: selection.category().to_string(),
+        state,
+        description: selection.description().to_string(),
+        detail,
+    }
+}
+
+fn unavailable_output(selection: OutputSelection, detail: &str) -> WorkbenchCapability {
+    WorkbenchCapability {
+        id: selection.id().to_string(),
+        label: selection.label().to_string(),
+        category: selection.category().to_string(),
+        state: CapabilityState::Unavailable,
+        description: selection.description().to_string(),
+        detail: detail.to_string(),
+    }
+}
+
+fn output_selections() -> Vec<OutputSelection> {
+    vec![
+        OutputSelection::Zip,
+        OutputSelection::Tar,
+        OutputSelection::TarGzip,
+        OutputSelection::TarZstd,
+        OutputSelection::Directory,
+        OutputSelection::RawFile,
+        OutputSelection::OciImage,
+        OutputSelection::OciLayout,
+        OutputSelection::WasmModule,
+        OutputSelection::WasmComponent,
+        OutputSelection::GitTree,
+        OutputSelection::AppBundle,
+        OutputSelection::Iso,
+    ]
+}
+
+fn representation_identity_label(selection: OutputSelection) -> &'static str {
+    match selection {
+        OutputSelection::GitTree => "Git Tree Identity",
+        OutputSelection::RawFile => "Output Digest",
+        OutputSelection::WasmModule => "Module Digest",
+        OutputSelection::WasmComponent => "Component Digest",
+        _ => "Representation Identity",
     }
 }
 
@@ -932,6 +1329,34 @@ fn collect_preview(
 }
 
 fn file_stem(identity: &str, extension: &str) -> String {
+    file_name(identity, extension)
+}
+
+fn file_name(identity: &str, extension: &str) -> String {
     let stem = identity.strip_prefix("sha256:").unwrap_or(identity);
     format!("artifact-{stem}.{extension}")
+}
+
+fn directory_name(identity: &str, suffix: &str) -> String {
+    let stem = identity.strip_prefix("sha256:").unwrap_or(identity);
+    format!("artifact-{stem}-{suffix}")
+}
+
+fn raw_output_name(identity: &str, source_path: &str) -> String {
+    let name = Path::new(source_path)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("artifact.bin");
+    let stem = identity.strip_prefix("sha256:").unwrap_or(identity);
+    format!("artifact-{stem}-{name}")
+}
+
+fn app_bundle_entrypoint(artifact: &Artifact) -> Option<String> {
+    if artifact.entries.len() == 1 {
+        return artifact.entries.first().map(|entry| entry.path.clone());
+    }
+    ["application.wasm", "bin/app"]
+        .into_iter()
+        .find(|candidate| artifact.entries.iter().any(|entry| entry.path == *candidate))
+        .map(ToString::to_string)
 }

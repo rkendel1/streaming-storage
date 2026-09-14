@@ -216,18 +216,59 @@ fieldset {
   padding: 0;
 }
 
+.option-group {
+  display: grid;
+  gap: 10px;
+}
+
+.option-group h3 {
+  border-bottom: 1px solid #d7deea;
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  margin: 10px 0 0;
+  padding-bottom: 8px;
+  text-transform: uppercase;
+}
+
 .option {
-  align-items: center;
+  align-items: start;
   border: 1px solid #d7deea;
   border-radius: 14px;
-  display: flex;
+  display: grid;
   gap: 12px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   padding: 12px;
+}
+
+.option span {
+  color: #172033;
+  font-weight: 800;
 }
 
 .option small {
   color: #667793;
-  margin-left: auto;
+  grid-column: 2 / 4;
+}
+
+.state-badge {
+  border-radius: 999px;
+  font-size: 0.72rem;
+  padding: 4px 8px;
+}
+
+.state-badge.available {
+  background: #e7f7ec;
+  color: #216e39;
+}
+
+.state-badge.external_consumer {
+  background: #eef2f7;
+  color: #50607a;
+}
+
+.state-badge.unavailable {
+  background: #fff1f0;
+  color: #a63b33;
 }
 
 .flow-summary {

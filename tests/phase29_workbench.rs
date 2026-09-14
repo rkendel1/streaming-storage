@@ -194,19 +194,34 @@ fn unsupported_boundaries_are_visible_but_not_selectable() {
         .iter()
         .find(|output| output.id == "directory")
         .expect("directory output should be shown");
-    assert_eq!(directory.detail, "Coming from future materializer");
+    assert_eq!(directory.state, artifact_workbench::CapabilityState::Available);
+    assert_eq!(directory.category, "Portable");
 
     let source = fixture_source();
     let (mut workbench, _store, _outputs) = workbench();
     workbench
         .import_source(source.path())
         .expect("source import should succeed");
-    workbench
+    let artifact = workbench
         .build_artifact(BuildOptions::default())
         .expect("artifact should be built");
+    let raw_file = artifact
+        .output_options
+        .iter()
+        .find(|output| output.id == "raw-file")
+        .expect("raw file output should be present");
+    assert_eq!(raw_file.state, artifact_workbench::CapabilityState::Unavailable);
+    assert!(raw_file.detail.contains("exactly one file"));
+    let app_bundle = artifact
+        .output_options
+        .iter()
+        .find(|output| output.id == "app-bundle")
+        .expect("app bundle output should be present");
+    assert_eq!(app_bundle.state, artifact_workbench::CapabilityState::Available);
 
-    assert!(workbench.select_output("directory").is_err());
-    assert!(workbench.select_output("wasm").is_err());
+    assert!(workbench.select_output("directory").is_ok());
+    assert!(workbench.select_output("raw-file").is_err());
+    assert!(workbench.select_output("wasm-component").is_err());
     assert!(workbench.select_output("oci").is_err());
     assert!(workbench.select_target("docker").is_err());
     assert!(workbench.select_target("remote-host").is_err());
