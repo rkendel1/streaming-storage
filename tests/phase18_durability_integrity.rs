@@ -222,9 +222,11 @@ fn metadata_corruption_and_content_substitution_fail_closed() {
     let metadata_err = store
         .recover(&built_a.artifact().identity)
         .expect_err("identity-corrupted metadata must fail closed");
-    assert!(metadata_err
-        .to_string()
-        .contains("stored artifact identity"));
+    assert!(
+        metadata_err
+            .to_string()
+            .contains("stored artifact identity")
+    );
 
     store
         .persist(built_a.artifact(), &built_a)
@@ -243,9 +245,11 @@ fn metadata_corruption_and_content_substitution_fail_closed() {
     let substitution_err = store
         .recover(&built_a.artifact().identity)
         .expect_err("content substitution must fail closed");
-    assert!(substitution_err
-        .to_string()
-        .contains("stored content digest mismatch"));
+    assert!(
+        substitution_err
+            .to_string()
+            .contains("stored content digest mismatch")
+    );
 }
 
 #[test]

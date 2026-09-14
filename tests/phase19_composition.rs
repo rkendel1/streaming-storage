@@ -286,7 +286,9 @@ fn composition_requires_explicit_inputs_and_rejects_path_collisions() {
             .compose(CompositionOptions::default())
             .expect_err("colliding paths should be rejected");
 
-    assert!(collision_error
-        .to_string()
-        .contains("collision in composition"));
+    assert!(
+        collision_error
+            .to_string()
+            .contains("collision in composition")
+    );
 }

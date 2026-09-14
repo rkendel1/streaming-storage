@@ -26,19 +26,35 @@
 
       <section class="panel" id="source-panel">
         <div class="panel-heading">
-          <h2>Source</h2>
+          <h2>Import Source</h2>
           <button id="change-source" class="link-button" type="button">Change</button>
         </div>
-        <div class="drop-zone" id="drop-zone">
-          <strong>Drop files or a folder here</strong>
-          <span>or import a source path from this workbench host</span>
-        </div>
-        <form id="import-form" class="inline-form">
-          <label for="source-path">Source path</label>
-          <input id="source-path" name="source-path" type="text" placeholder="/absolute/path/to/my-app" required />
-          <button type="submit">Import Source</button>
+        <form id="import-form" class="source-grid">
+          <label class="source-card" for="github-url">
+            <span>GitHub</span>
+            <input id="github-url" name="github-url" type="url" placeholder="https://github.com/org/repo" />
+            <button data-import="github-url" type="submit">Import GitHub</button>
+          </label>
+          <label class="source-card" for="direct-url">
+            <span>Direct URL</span>
+            <input id="direct-url" name="direct-url" type="url" placeholder="https://example.com/artifact.zip" />
+            <button data-import="direct-url" type="submit">Import URL</button>
+          </label>
+          <div class="source-card">
+            <span>Local</span>
+            <div class="local-buttons">
+              <label class="file-button" for="local-files">Choose files</label>
+              <input id="local-files" type="file" multiple />
+              <label class="file-button" for="local-folder">Choose folder</label>
+              <input id="local-folder" type="file" webkitdirectory multiple />
+            </div>
+            <label for="source-path">Workbench host path</label>
+            <input id="source-path" name="source-path" type="text" placeholder="/absolute/path/to/my-app" />
+            <button data-import="source-path" type="submit">Import Local</button>
+          </div>
         </form>
-        <pre id="source-tree" class="tree" hidden></pre>
+        <article id="source-summary" class="receipt-card" hidden></article>
+        <div id="source-tree" class="tree" hidden></div>
       </section>
 
       <section class="panel" id="artifact-panel" aria-disabled="true">
@@ -76,11 +92,11 @@
         <fieldset id="target-options"></fieldset>
         <label class="runtime-input" for="executable-path">Runtime executable path</label>
         <input id="executable-path" type="text" value="bin/app" />
-        <button id="run-artifact" type="button" disabled>Deploy / Run</button>
+        <button id="run-artifact" type="button" disabled>Run</button>
       </section>
 
       <section class="panel" id="receipt-panel" aria-disabled="true">
-        <h2>Artifact Complete</h2>
+        <h2>Result</h2>
         <article id="receipt" class="receipt-card"></article>
         <div class="actions">
           <button id="download-output" type="button" disabled>Download Output</button>

@@ -114,7 +114,13 @@ fn sha256_prefixed(bytes: &[u8]) -> String {
 #[test]
 fn runtime_executes_materialized_artifact() {
     let prepared = prepare_artifact_fixture();
-    assert!(prepared.materialization_root.path().join("artifact.zip").exists());
+    assert!(
+        prepared
+            .materialization_root
+            .path()
+            .join("artifact.zip")
+            .exists()
+    );
 
     let execution = execute_runtime(&prepared, "success", "hello");
 
@@ -162,7 +168,11 @@ fn runtime_failure_does_not_corrupt_artifact() {
     let failure_execution = execute_runtime(&prepared, "fail", "ignored");
     assert_eq!(failure_execution.exit_code, Some(42));
     assert_eq!(failure_execution.artifact_identity, identity_before_failure);
-    assert!(failure_execution.stderr.contains("runtime failure requested"));
+    assert!(
+        failure_execution
+            .stderr
+            .contains("runtime failure requested")
+    );
 
     let recovered = recover(&prepared);
     assert_eq!(recovered.artifact().identity, identity_before_failure);
